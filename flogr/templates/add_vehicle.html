@@ -1,0 +1,80 @@
+{% extends "layout.html" %}
+
+{% block title %}
+New Vehicle
+{% endblock %}
+
+{% block main %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <h2>Add a Vehicle to your Garage</h2>
+            <br>
+            <form id="add_vehicle" action="/add_vehicle" method="post">
+                <div class="mb-3">
+                    <label for="registration" class="form-label">Registration</label>
+                    <input id="registration" autocomplete="off" autofocus class="form-control" name="registration" placeholder="Enter your vehicle registration" type="text" required>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="fuel_type" class="form-label">Fuel Type</label>
+                            <select id="fuel_type" class="form-control" name="fuel_type" required>
+                                <option value="" selected disabled>Fuel Type</option>
+                                {% for fuel in fuel_types %}
+                                <option value="{{ fuel.code }}">{{ fuel.code }}: {{ fuel.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="vehicle_type" class="form-label">Vehicle Type</label>
+                            <select id="vehicle_type" class="form-control" name="vehicle_type" required>
+                                <option value="" selected disabled>Vehicle Type</option>
+                                {% for vehicle in vehicle_types %}
+                                <option value="{{ vehicle }}">{{ vehicle }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="make" class="form-label">Make</label>
+                            <input id="make" autocomplete="off" class="form-control" name="make" placeholder="Enter the vehicle make" type="text" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="model" class="form-label">Model</label>
+                            <input id="model" autocomplete="off" class="form-control" name="model" placeholder="Enter the vehicle model" type="text" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="year" class="form-label">Year</label>
+                            <select id="year" class="form-control" name="year" required>
+                                <option value="" selected disabled>Year</option>
+                                {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="odometer" class="form-label">Odometer</label>
+                            <input id="odometer" autocomplete="off" class="form-control" name="odometer" placeholder="Enter the vehicle Odometer" type="number" min="0" required>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

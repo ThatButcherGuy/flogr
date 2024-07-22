@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Register
+{% endblock %}
+
+{% block main %}
+<h2>Register for fLOGr</h2><br>
+<form id="register" action="/register" method="post">
+    <div class="mb-3">
+        <input autocomplete="off" autofocus class="form-control mx-auto w-auto lowercase" name="username" placeholder="Username"
+            type="text" oninput="forceLowerCase(this)">
+    </div>
+        <div class="mb-3">
+        <input autocomplete="off" class="form-control mx-auto w-auto" id="email" name="email" placeholder="Email"
+            type="email">
+    </div>
+    <div class="mb-3">
+        <input class="form-control mx-auto w-auto" name="password" placeholder="Password" type="password">
+    </div>
+    <div class="mb-3">
+        <input class="form-control mx-auto w-auto" name="confirmation" placeholder="Re-Type Password" type="password">
+    </div>
+    <button class="btn btn-primary" type="submit">Register</button>
+</form>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+<script>
+    function forceLowerCase(input) {
+        input.value = input.value.toLowerCase();
+    }
+
+    document.getElementById('register').addEventListener('submit', function(event) {
+        const emailInput = document.getElementById('email');
+        const email = emailInput.value;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailRegex.test(email)) {
+            alert('Please enter a valid email address.');
+            event.preventDefault();
+        }
+    });
+</script>
+{% endblock %}
