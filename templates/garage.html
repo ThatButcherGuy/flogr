@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Garage
+{% endblock %}
+
+{% block main %}
+<div class="container d-flex flex-column align-items-center">
+    <h2>Your Garage</h2>
+    <br>
+    <div>
+        <a class="btn btn-primary" href="/add_vehicle">Add Vehicle</a>
+    </div>
+    <br>
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered">
+            <thead class="thead-dark">
+                <tr>
+                    <th scope="col">Registration</th>
+                    <th scope="col" class="d-none d-sm-table-cell">Fuel Type</th>
+                    <th scope="col" class="d-none d-sm-table-cell">Vehicle Type</th>
+                    <th scope="col">Make</th>
+                    <th scope="col">Model</th>
+                    <th scope="col" class="d-none d-sm-table-cell">Year</th>
+                    <th scope="col" class="d-none d-sm-table-cell">Odometer</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vehicle in vehicles %}
+                <tr>
+                    <td><a href="{{ url_for('vehicle_details', registration=vehicle.registration) }}">{{ vehicle.registration }}</a></td>
+                    <td class="d-none d-sm-table-cell">{{ vehicle.fuel_name }} ({{ vehicle.fuel_type }})</td>
+                    <td class="d-none d-sm-table-cell">{{ vehicle.vehicle_type }}</td>
+                    <td>{{ vehicle.make }}</td>
+                    <td>{{ vehicle.model }}</td>
+                    <td class="d-none d-sm-table-cell">{{ vehicle.year }}</td>
+                    <td class="d-none d-sm-table-cell">{{ vehicle.odometer }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
