@@ -1,25 +1,32 @@
-# For more information, please refer to https://aka.ms/vscode-docker-python
-FROM python:3-slim
+FROM python:3.11-slim-bookworm
 
-EXPOSE 9119
+# Create the 'apps' user and group with UID 568 and GID 568
+RUN groupadd -g 568 apps && \
+    useradd -u 568 -g apps apps
 
-# Keeps Python from generating .pyc files in the container
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set the working directory
+WORKDIR /flask-app
 
-# Turns off buffering for easier container logging
-ENV PYTHONUNBUFFERED=1
+# Copy the requirements file and install dependencies
+COPY requirements.txt requirements.txt
+RUN apt-get update && apt-get install -y \
+    gcc \
+    python3-dev \
+    build-essential && \
+    pip3 install --no-cache-dir -r requirements.txt && \
+    apt-get remove -y build-essential python3-dev gcc && \
+    apt-get autoremove -y && apt-get clean && find . -name "__pycache__" -type d -exec rm -r {} +
 
-# Install pip requirements
-COPY requirements.txt .
-RUN python -m pip install -r requirements.txt
+# Copy the application code (including static, templates, and data directories)
+COPY . .
 
-WORKDIR /app
-COPY . /app
+# Ensure the application and data directories exist and set proper permissions
+RUN mkdir -p /flask-app/data && \
+    touch /flask-app/data/flogr.db && \
+    chown -R apps:apps /flask-app
 
-# Creates a non-root user with an explicit UID and adds permission to access the /app folder
-# For more info, please refer to https://aka.ms/vscode-docker-python-configure-containers
-RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
-USER appuser
+# Switch to the 'apps' user for running the app
+USER apps
 
-# During debugging, this entry point will be overridden. For more information, please refer to https://aka.ms/vscode-docker-python-debug
-CMD ["gunicorn", "--bind", "0.0.0.0:9119", "app:app"]
+# Command to run the app using Gunicorn
+CMD ["gunicorn", "--config", "gunicorn_config.py", "app:app"]

@@ -19,9 +19,106 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-# Configure CS50 Library to use SQLite database
-db = SQL("sqlite:///flogr.db")
+# Define the path to the database
+db_path = os.path.join(os.path.dirname(__file__), "data", "flogr.db")
 
+# Ensure the 'data' directory exists
+data_dir = os.path.dirname(db_path)
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
+    print(f"Created directory: {data_dir}")
+
+db = SQL(f"sqlite:////flask-app/data/flogr.db")
+
+# Assuming db is already initialized as a connection object
+# Configure CS50 Library to use SQLite database and create tables if needed
+if not os.path.exists(db_path) or db.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users';")[0]['count(*)'] == 0:
+    try:
+        # Create the users table
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            email VARCHAR(100) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            first_name VARCHAR(50),
+            last_name VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE,
+            role TEXT CHECK (role IN ('user', 'admin')) DEFAULT 'user'
+        );
+        """)
+        
+        # Create the fuel_types table
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS fuel_types (
+            code VARCHAR(10) PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE
+        );
+        """)
+
+        # Create the vehicles table
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            registration VARCHAR(10) NOT NULL UNIQUE,
+            fuel_type VARCHAR(10),
+            vehicle_type VARCHAR(20) NOT NULL,
+            make VARCHAR(20) NOT NULL,
+            model VARCHAR(20) NOT NULL,
+            year INTEGER NOT NULL,
+            odometer INTEGER NOT NULL CHECK (odometer >= 0),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (fuel_type) REFERENCES fuel_types(code)
+        );
+        """)
+
+        # Create the log table
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            fuel_code VARCHAR(10),
+            date DATE NOT NULL,
+            registration VARCHAR(10) NOT NULL,
+            receipt_number VARCHAR(50),
+            purchased_at VARCHAR(50),
+            litres DECIMAL(6,2) NOT NULL CHECK (litres >= 0),
+            price_per_litre DECIMAL(5,3) NOT NULL CHECK (price_per_litre >= 0),
+            sale_price DECIMAL(6,2) NOT NULL CHECK (sale_price >= 0),
+            kilometres INTEGER NOT NULL CHECK (kilometres >= 0),
+            comments VARCHAR(150),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (fuel_code) REFERENCES fuel_types(code),
+            FOREIGN KEY (registration) REFERENCES vehicles(registration)
+        );
+        """)
+
+        # Insert default fuel types
+        db.execute("""
+        INSERT INTO fuel_types (code, name) VALUES 
+        ('DL', 'Diesel'),
+        ('U91', 'Unleaded 91'),
+        ('U95', 'Unleaded 95'),
+        ('P98', 'Premium 98'),
+        ('LPG', 'LPG'),
+        ('E10', 'Ethanol');
+        """)
+
+    except Exception as e:
+        print(f"Error creating tables: {e}")
+        exit(1)
+
+# Verify users table exists
+result = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+print(result)
+
+# Check inserted fuel types
+fuel_types = db.execute("SELECT * FROM fuel_types;")
+print(fuel_types)
 
 @app.after_request
 def after_request(response):
