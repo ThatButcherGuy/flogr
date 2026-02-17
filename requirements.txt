@@ -18,7 +18,7 @@ packaging==24.2
 pytz==2024.2
 setuptools==78.1.1
 SQLAlchemy==2.0.36
-sqlparse==0.5.2
+sqlparse==0.5.4
 termcolor==2.5.0
 typing_extensions==4.12.2
 Werkzeug==3.1.5
