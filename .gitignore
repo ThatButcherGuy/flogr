@@ -1,0 +1,65 @@
+# ============================
+# Python & Flask
+# ============================
+
+# Virtual environments
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite database
+data/*.db
+
+# Flask session files
+flask_session/
+
+# Environment variables / secrets
+.env
+*.env
+
+# ============================
+# Docker
+# ============================
+
+# Docker build context artifacts
+*.tar
+*.log
+*.pid
+docker-compose.override.yml
+
+# Ignore local docker volumes (if mapped locally)
+volumes/
+tmp/
+
+# ============================
+# IDEs / Editors
+# ============================
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# ============================
+# Logs, temp, backup
+# ============================
+
+*.log
+*.tmp
+*.bak
+*.swp
+
+# ============================
+# Misc / OS
+# ============================
+
+Thumbs.db
+desktop.ini
