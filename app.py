@@ -1,4 +1,5 @@
 import os
+import sqlite3
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for
@@ -9,116 +10,81 @@ from datetime import date, datetime
 
 from helpers import login_required
 
-# Configure application
+# -------------------------
+# Flask Application Setup
+# -------------------------
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "default_secret_key")
 
-app.secret_key = os.getenv('SECRET_KEY', 'default_secret_key')
-
-# Configure session to use filesystem (instead of signed cookies)
+# Session config
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-# Define the path to the database
-db_path = os.path.join(os.path.dirname(__file__), "data", "flogr.db")
+# -------------------------
+# Database Setup
+# -------------------------
 
-# Ensure the 'data' directory exists
-data_dir = os.path.dirname(db_path)
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir)
-    print(f"Created directory: {data_dir}")
+DB_PATH = os.getenv(
+    "DATABASE_PATH",
+    os.path.join(os.path.dirname(__file__), "data", "flogr.db")
+)
+DB_DIR = os.path.dirname(DB_PATH)
+SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "static", "schema.sql")
 
-db = SQL(f"sqlite:////flask-app/data/flogr.db")
+# Ensure DB directory exists
+os.makedirs(DB_DIR, exist_ok=True)
 
-# Assuming db is already initialized as a connection object
-# Configure CS50 Library to use SQLite database and create tables if needed
-if not os.path.exists(db_path) or db.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users';")[0]['count(*)'] == 0:
+# Create DB file if it doesn't exist
+if not os.path.exists(DB_PATH):
+    print(f"Creating new SQLite database at {DB_PATH}")
+    sqlite3.connect(DB_PATH).close()
+
+# Apply SQLite PRAGMAs
+def setup_sqlite(path):
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    conn.close()
+
+setup_sqlite(DB_PATH)
+
+# Initialize CS50 SQL wrapper
+db = SQL(f"sqlite:///{DB_PATH}")
+
+# -------------------------
+# Initialize DB from schema
+# -------------------------
+
+# Check if database is empty (no tables)
+tables = db.execute(
+    "SELECT name FROM sqlite_master WHERE type='table';"
+)
+
+if not tables:
+    print("Database is empty — initializing from schema.sql")
+    if not os.path.exists(SCHEMA_PATH):
+        raise FileNotFoundError(f"Schema file not found: {SCHEMA_PATH}")
+
+    with open(SCHEMA_PATH, "r") as f:
+        sql_statements = f.read()
+
     try:
-        # Create the users table
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            password_hash VARCHAR(255) NOT NULL,
-            first_name VARCHAR(50),
-            last_name VARCHAR(50),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP,
-            is_active BOOLEAN DEFAULT TRUE,
-            role TEXT CHECK (role IN ('user', 'admin')) DEFAULT 'user'
-        );
-        """)
-        
-        # Create the fuel_types table
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS fuel_types (
-            code VARCHAR(10) PRIMARY KEY,
-            name VARCHAR(50) NOT NULL UNIQUE
-        );
-        """)
-
-        # Create the vehicles table
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS vehicles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            registration VARCHAR(10) NOT NULL UNIQUE,
-            fuel_type VARCHAR(10),
-            vehicle_type VARCHAR(20) NOT NULL,
-            make VARCHAR(20) NOT NULL,
-            model VARCHAR(20) NOT NULL,
-            year INTEGER NOT NULL,
-            odometer INTEGER NOT NULL CHECK (odometer >= 0),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (fuel_type) REFERENCES fuel_types(code)
-        );
-        """)
-
-        # Create the log table
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            fuel_code VARCHAR(10),
-            date DATE NOT NULL,
-            registration VARCHAR(10) NOT NULL,
-            receipt_number VARCHAR(50),
-            purchased_at VARCHAR(50),
-            litres DECIMAL(6,2) NOT NULL CHECK (litres >= 0),
-            price_per_litre DECIMAL(5,3) NOT NULL CHECK (price_per_litre >= 0),
-            sale_price DECIMAL(6,2) NOT NULL CHECK (sale_price >= 0),
-            kilometres INTEGER NOT NULL CHECK (kilometres >= 0),
-            comments VARCHAR(150),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (fuel_code) REFERENCES fuel_types(code),
-            FOREIGN KEY (registration) REFERENCES vehicles(registration)
-        );
-        """)
-
-        # Insert default fuel types
-        db.execute("""
-        INSERT INTO fuel_types (code, name) VALUES 
-        ('DL', 'Diesel'),
-        ('U91', 'Unleaded 91'),
-        ('U95', 'Unleaded 95'),
-        ('P98', 'Premium 98'),
-        ('LPG', 'LPG'),
-        ('E10', 'Ethanol');
-        """)
-
-    except Exception as e:
-        print(f"Error creating tables: {e}")
+        # sqlite3 connection for executing multiple statements
+        conn = sqlite3.connect(DB_PATH)
+        conn.executescript(sql_statements)
+        conn.close()
+        print("Database initialized successfully from schema.sql")
+    except sqlite3.Error as e:
+        print(f"Error initializing database: {e}")
         exit(1)
 
-# Verify users table exists
-result = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
-print(result)
-
-# Check inserted fuel types
-fuel_types = db.execute("SELECT * FROM fuel_types;")
-print(fuel_types)
+# -------------------------
+# Debug: verify tables
+# -------------------------
+print("Tables in DB:", db.execute(
+    "SELECT name FROM sqlite_master WHERE type='table';"
+))
 
 @app.after_request
 def after_request(response):
