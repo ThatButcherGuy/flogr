@@ -1,14 +1,16 @@
 # fLOGr
 
-#### Video Demo: <https://youtu.be/Uuhjj5j36YQ>
+## Video Demo: <https://youtu.be/Uuhjj5j36YQ>
 
-#### Description
+## Description
 
 fLOGr is a web-based fuel logging application intended to capture data from the pump each refuel of your vehicle. This data is stored into a SQLite3 database with Python crunching the data to be displayed in fLOGr using Flask and Jinga.
 
 fLOGr has been developed by Brenden Taylor (GitHub user: ThatButcherGuy) as the final project for the Harvard CS50x class of 2024.
 
-##### Login
+---
+
+### Login
 
 This is the first landing page for fLOGr.
 
@@ -16,15 +18,17 @@ Existing users can enter their credentials to gain access to their account. Cred
 
 The Login page and route have been adapted from the CS50x Finance problem set. A register button has been added for new users and JavaScript has been included to ensure that the username is always entered in lowercase. The decision to force lowercase was a learning moment for myself as I wanted to understand how JavaScript could be implemented to achieve this. It also allows the data to be easily validated prior to being stored in the database. It is likely that this feature will be removed in a future iteration in favour of a smoother user experience that gives more freedom to the user.
 
-##### Register
+---
+
+### Register
 
 The Register page allows new users to register for fLOGr. The validation of this data occurs similarly to the Login page however instead of comparing against the database, once validated the data is committed to the database as a new user.
 
-##### Add New Vehicle
+#### Add New Vehicle
 
 When a user registers, they are redirected to the `add_vehicle` page. Adding a vehicle to the users Garage is required to utilise the functionality of fLOGr.
 
-###### Fields
+##### Fields
 
 Registration:
 This is the registration number for the vehicle.
@@ -105,7 +109,9 @@ This cannot be less than or equal to zero.
 - Requirements
   - `INTEGER NOT NULL CHECK (odometer >= 0)`
 
-##### Enter a Record (Index Page)
+---
+
+### Enter a Record (Index Page)
 
 This is the Index page for fLOGr. If a current user logs in, they are then directed to this page. This allows fast access to be able to enter a fuel record while on the go.
 
@@ -113,7 +119,7 @@ This is the Index page for fLOGr. If a current user logs in, they are then direc
 
 **It is important to ensure that there is no missing data. fLOGr requires every refuel for a vehicle to be logged to maintain data accuracy. If details of a refuel are lost before logging, a near enough guess is better than not logging anything at all.**
 
-###### Fields
+#### Fields
 
 Select Vehicle:
 
@@ -196,7 +202,9 @@ This field is optional.
 - Requirements
   - `VARCHAR(150)`
 
-##### View Log
+  ---
+
+### View Log
 
 The View Log page allows the user to view all logs made on their account. This defaults to sorting descending from the newest log entered.
 
@@ -207,7 +215,9 @@ The View Log page contains two calculated fields:
 - Sale Price = Price Per Litre x Litres
 - Litres per 100km (L/100km) = (Litres / Kilometres) x 100
 
-##### Stats
+---
+
+### Stats
 
 The Stats page contains read only statistics generated from the users logs.
 
@@ -219,7 +229,7 @@ The Last Log table briefly summarises the last log made by the user.
 
 The Global Stats table briefly summarises all logs made by the user across all vehicles in their Garage.
 
-###### Vehicle Stats
+#### Vehicle Stats
 
 The Vehicle Stats page is accessed by clicking on the registration link on the Stats page. This allows the user to dive deeper into the log statistics for specific vehicles.
 
@@ -231,7 +241,9 @@ The Vehicle Stats table briefly summarises all logs made for the selected vehicl
 
 The Recent Log table shows the last 20 log entries for the selected vehicle.
 
-##### Garage
+---
+
+### Garage
 
 The Garage page show information on the vehicles currently in the users Garage.
 
@@ -241,7 +253,7 @@ On smaller devices, the table on the Garage page will not show all the available
 
 Clicking on the Registration will take the user to the vehicle details page.
 
-###### Vehicle Details
+#### Vehicle Details
 
 The Vehicle Details page will display all the information recorded against the selected vehicle.
 
@@ -249,7 +261,9 @@ This page is useful for users on a smaller device where the Garage page does not
 
 The Vehicle Details page can be accessed by clicking on the Registration of the desired vehicle on the Garage page.
 
-##### SQLite3 Database Structure
+---
+
+### SQLite3 Database Structure
 
 The SQLite3 Database contains four tables:
 
@@ -278,7 +292,9 @@ This table is where most data is stored for fLOGr and contains every logged reco
 
 Each entry is linked back to a vehicle `registration` and `user_id`.
 
-#### Future Enhancements (wish list)
+---
+
+### Future Enhancements (wish list)
 
 - Force login password requirements for account security.
 - Create viewable/editable user accounts.
