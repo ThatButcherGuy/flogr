@@ -302,12 +302,12 @@ Each entry is linked back to a vehicle `registration` and `user_id`.
   - Consider email notifications and marketing.
   - Allow users to be able to reset their password.
   - Add a `forgot password` feature.
-✅ Allow users to edit and delete records they have logged.
-✅ Allow users to edit and delete vehicles in their Garage.
+- *✅ Allow users to edit and delete records they have logged.*
+- *✅ Allow users to edit and delete vehicles in their Garage.*
 - Export logs
-  ✅ Allow users to be able to export their logs as `.csv` data file.
+  - *✅ Allow users to be able to export their logs as `.csv` data file.*
   - Consider allowing users to export their log into a formatted `.pdf` file.
-  ✅ Allow users to be able to filter their logs by date or registration (or other fields) before exporting.
+  - *✅ Allow users to be able to filter their logs by date or registration (or other fields) before exporting.*
   - Consider `.pdf` exports of reports that contain infographs and stats.
 - Unit of measure (UoM)
   - UoM to consider:
