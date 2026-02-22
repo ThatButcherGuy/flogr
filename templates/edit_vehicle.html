@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Edit Vehicle: {{ vehicle.registration }}
+{% endblock %}
+
+{% block main %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <h2>Edit Vehicle: {{ vehicle.registration }}</h2>
+            <br>
+            <form id="edit_vehicle" method="POST">
+                <!-- Registration -->
+                <div class="mb-3">
+                    <label for="registration" class="form-label">Registration</label>
+                    <input id="registration" class="form-control" name="registration" value="{{ vehicle.registration }}"
+                        type="text" disabled>
+                </div>
+
+                <!-- Fuel & Type -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="fuel_type" class="form-label">Fuel Type</label>
+                            <select id="fuel_type" class="form-control" name="fuel_type" required>
+                                {% for fuel in fuel_types %}
+                                <option value="{{ fuel.code }}" {% if fuel.code==vehicle.fuel_type %}selected{% endif %}>
+                                    {{ fuel.code }}: {{ fuel.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="vehicle_type" class="form-label">Vehicle Type</label>
+                            <select id="vehicle_type" class="form-control" name="vehicle_type" required>
+                                {% for type in vehicle_types %}
+                                <option value="{{ type }}" {% if type==vehicle.vehicle_type %}selected{% endif %}>
+                                    {{ type }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Make & Model -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="make" class="form-label">Make</label>
+                            <input id="make" class="form-control" name="make" type="text" value="{{ vehicle.make }}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="model" class="form-label">Model</label>
+                            <input id="model" class="form-control" name="model" type="text" value="{{ vehicle.model }}"
+                                required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Year & Odometer -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="year" class="form-label">Year</label>
+                            <select id="year" class="form-control" name="year" required>
+                                {% for y in years %}
+                                <option value="{{ y }}" {% if y==vehicle.year %}selected{% endif %}>{{ y }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="odometer" class="form-label">Odometer</label>
+                            <input id="odometer" class="form-control" name="odometer" type="number" min="0"
+                                value="{{ vehicle.odometer }}" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <button class="btn btn-primary" type="submit">Save Changes</button>
+                <button class="btn btn-danger" type="submit" name="delete">Delete Vehicle</button>
+                <a class="btn btn-secondary" href="{{ url_for('garage') }}">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
