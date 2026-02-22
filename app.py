@@ -1,12 +1,14 @@
 import os
 import sqlite3
+import csv
 
 from cs50 import SQL
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for, Response
 from flask_session import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 from email_validator import validate_email, EmailNotValidError
 from datetime import date, datetime
+from io import StringIO
 
 from helpers import login_required
 
@@ -386,6 +388,163 @@ def view_log():
 
     return render_template("view_log.html", logs=logs, registrations=registrations, selected_registration=selected_registration)
 
+@app.route("/log/<int:log_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_log(log_id):
+    user_id = session["user_id"]
+
+    # Fetch vehicles and fuel types
+    vehicles = db.execute("""
+        SELECT
+            vehicles.registration,
+            vehicles.make,
+            vehicles.model,
+            vehicles.fuel_type,
+            fuel_types.name AS fuel_name
+        FROM vehicles
+        INNER JOIN fuel_types
+        ON vehicles.fuel_type = fuel_types.code
+        WHERE user_id = ?
+    """, user_id)
+
+    fuel_types = db.execute("SELECT * FROM fuel_types")
+
+    # Fetch the log entry for this user
+    log_list = db.execute("""
+        SELECT *
+        FROM log
+        WHERE id = ? AND user_id = ?
+    """, log_id, user_id)
+
+    if not log_list:
+        flash("Log entry not found or access denied.", "warning")
+        return redirect(url_for("view_log"))
+
+    log = dict(log_list[0])  # mutable
+
+    if request.method == "POST":
+
+        # DELETE button clicked
+        if "delete" in request.form:
+            # Fetch the log entry to get kilometres and registration
+            log_entry = db.execute("""
+                SELECT kilometres, registration
+                FROM log
+                WHERE id = ? AND user_id = ?
+            """, log_id, user_id)
+
+            if log_entry:
+                log_data = log_entry[0]
+                km_to_remove = log_data["kilometres"]
+                registration = log_data["registration"]
+
+                # Fetch current odometer for the vehicle
+                vehicle = db.execute("""
+                    SELECT odometer
+                    FROM vehicles
+                    WHERE registration = ? AND user_id = ?
+                """, registration, user_id)
+
+                if vehicle:
+                    current_odometer = vehicle[0]["odometer"]
+                    new_odometer = max(current_odometer - km_to_remove, 0)  # ensure odometer doesn't go negative
+
+                    # Update vehicle odometer
+                    db.execute("""
+                        UPDATE vehicles
+                        SET odometer = ?
+                        WHERE registration = ? AND user_id = ?
+                    """, new_odometer, registration, user_id)
+
+                # Delete the log entry
+                db.execute("DELETE FROM log WHERE id = ? AND user_id = ?", log_id, user_id)
+                flash("Record deleted successfully, odometer updated.", "success")
+            else:
+                flash("Log entry not found.", "warning")
+
+            return redirect(url_for("view_log"))
+
+        # Extract form data
+        registration = request.form.get("registration")
+        fuel_code = request.form.get("fuel_code")
+        receipt_number = request.form.get("receipt_number")
+        purchased_at = request.form.get("purchased_at")
+        litres = request.form.get("litres")
+        price_per_litre = request.form.get("price_per_litre")
+        kilometres = request.form.get("kilometres")
+        comments = request.form.get("comments")
+        log_date_str = request.form.get("date")
+
+        try:
+            # Validate numeric fields
+            litres = float(litres)
+            price_per_litre = float(price_per_litre)
+            kilometres = int(kilometres)
+
+            if litres < 0 or price_per_litre < 0 or kilometres < 0:
+                flash("Invalid input: Negative values not allowed for litres, price per litre, or kilometres.", "danger")
+                return redirect(url_for("edit_log", log_id=log_id))
+
+            # Validate comments length
+            if len(comments) > 150:
+                flash("Comments must be less than 150 characters.", "danger")
+                return redirect(url_for("edit_log", log_id=log_id))
+
+            # Validate date
+            log_date = datetime.strptime(log_date_str, "%Y-%m-%d").date()
+            if log_date > date.today():
+                flash("Date must not be in the future.", "danger")
+                return redirect(url_for("edit_log", log_id=log_id))
+
+            # Check vehicle exists
+            vehicle_lookup = db.execute("""
+                SELECT registration, odometer
+                FROM vehicles
+                WHERE registration = ? AND user_id = ?
+            """, registration, user_id)
+
+            if not vehicle_lookup:
+                flash("Vehicle registration not found.", "danger")
+                return redirect(url_for("edit_log", log_id=log_id))
+
+            vehicle = vehicle_lookup[0]
+
+            # Calculate sale price
+            sale_price = round(litres * price_per_litre, 2)
+
+            # Update log
+            db.execute("""
+                UPDATE log
+                SET date = ?, registration = ?, fuel_code = ?, receipt_number = ?,
+                    purchased_at = ?, litres = ?, price_per_litre = ?,
+                    sale_price = ?, kilometres = ?, comments = ?
+                WHERE id = ? AND user_id = ?
+            """, log_date, registration, fuel_code, receipt_number,
+                 purchased_at, litres, price_per_litre, sale_price,
+                 kilometres, comments, log_id, user_id)
+
+            # Adjust odometer
+            old_km = log['kilometres']
+            current_odometer = vehicle['odometer']
+            new_odometer = current_odometer - old_km + kilometres
+
+            db.execute("""
+                UPDATE vehicles
+                SET odometer = ?
+                WHERE registration = ? AND user_id = ?
+            """, new_odometer, registration, user_id)
+
+            flash("Record updated successfully!", "success")
+            return redirect(url_for("view_log"))
+
+        except ValueError:
+            flash("Invalid input: Ensure all numeric fields are valid numbers.", "danger")
+            return redirect(url_for("edit_log", log_id=log_id))
+
+    # Precompute Litres/100km
+    log["litres_per_100km"] = (log["litres"] / log["kilometres"] * 100) if log["kilometres"] > 0 else 0.0
+
+    return render_template("edit_log.html", log=log, vehicles=vehicles, fuel_types=fuel_types)
 
 @app.route("/stats")
 @login_required
@@ -574,6 +733,49 @@ def vehicle_stats(registration):
         flash(f"An error occurred: {e}", "danger")
         return redirect(url_for("stats"))
 
+@app.route("/export_log")
+@login_required
+def export_log():
+    user_id = session["user_id"]
+    registration_filter = request.args.get("registration")  # optional
+
+    # Fetch logs with optional filter
+    if registration_filter:
+        logs = db.execute("""
+            SELECT *
+            FROM log
+            WHERE user_id = ? AND registration = ?
+            ORDER BY date DESC
+        """, user_id, registration_filter)
+    else:
+        logs = db.execute("""
+            SELECT *
+            FROM log
+            WHERE user_id = ?
+            ORDER BY date DESC
+        """, user_id)
+
+    # Compute litres_per_100km
+    for log in logs:
+        log["litres_per_100km"] = (log["litres"] / log["kilometres"]) * 100 if log["kilometres"] > 0 else 0.0
+
+    # Create CSV in memory
+    si = StringIO()
+    cw = csv.writer(si)
+
+    # Write headers including new calculated column
+    if logs:
+        headers = list(logs[0].keys())
+        cw.writerow(headers)
+
+        for log in logs:
+            cw.writerow([log[h] for h in headers])
+
+    return Response(
+        si.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=log_export.csv"}
+    )
 
 @app.route("/garage")
 @login_required
@@ -708,6 +910,62 @@ def add_vehicle():
         flash('Vehicle added successfully!', 'success')
 
         return redirect(url_for("garage"))
+
+@app.route("/edit_vehicle/<registration>", methods=["GET", "POST"])
+@login_required
+def edit_vehicle(registration):
+    user_id = session["user_id"]
+
+    vehicle_list = db.execute("""
+        SELECT v.*, f.name AS fuel_name
+        FROM vehicles v
+        INNER JOIN fuel_types f ON v.fuel_type = f.code
+        WHERE v.user_id = ? AND v.registration = ?
+    """, user_id, registration)
+
+    if not vehicle_list:
+        flash("Vehicle not found or access denied.", "warning")
+        return redirect(url_for("garage"))
+
+    vehicle = dict(vehicle_list[0])
+
+    fuel_types = db.execute("SELECT * FROM fuel_types")
+    vehicle_types = ["Car", "4wd", "Truck", "Motorcycle", "Hot Air Balloon", "Aircraft", "Boat", "Other"]
+    years = list(range(2024, 1959, -1))
+
+    if request.method == "POST":
+        if "delete" in request.form:
+            db.execute("DELETE FROM vehicles WHERE user_id = ? AND registration = ?", user_id, registration)
+            flash(f"Vehicle {registration} deleted successfully.", "success")
+            return redirect(url_for("garage"))
+
+        # Otherwise, update
+        fuel_type = request.form.get("fuel_type")
+        vehicle_type = request.form.get("vehicle_type")
+        make = request.form.get("make")
+        model = request.form.get("model")
+        year = request.form.get("year")
+        odometer = request.form.get("odometer")
+
+        if not (fuel_type and vehicle_type and make and model and year and odometer):
+            flash("Please complete all fields.", "danger")
+            return redirect(url_for("edit_vehicle", registration=registration))
+
+        if not odometer.isdigit() or not year.isdigit():
+            flash("Year and Odometer must be numbers.", "danger")
+            return redirect(url_for("edit_vehicle", registration=registration))
+
+        db.execute("""
+            UPDATE vehicles
+            SET fuel_type = ?, vehicle_type = ?, make = ?, model = ?, year = ?, odometer = ?
+            WHERE user_id = ? AND registration = ?
+        """, fuel_type, vehicle_type, make, model, year, odometer, user_id, registration)
+
+        flash("Vehicle updated successfully!", "success")
+        return redirect(url_for("garage"))
+
+    return render_template("edit_vehicle.html", vehicle=vehicle, fuel_types=fuel_types,
+                           vehicle_types=vehicle_types, years=years)
     
 
 if __name__ == "__main__":
