@@ -2,6 +2,33 @@
 
 ## Video Demo: <https://youtu.be/Uuhjj5j36YQ>
 
+## docker-compose.yml
+```yml
+version: "3.9"
+
+services:
+  flogr:
+    image: docker.io/thatbutcherguy/flogr-docker:latest
+    container_name: flogr
+    ports:
+      - "15001:8080" # Map port 15001 on the host to 8080 in the container
+    volumes:
+      - /mnt/tank/appdata/flogr/data:/flask-app/data # Persist database
+    environment:
+      - FLASK_ENV=production # Optional: Set environment variables as needed
+      - DATABASE_PATH=/flask-app/data/flogr.db
+      - PUID=568
+      - PGID=568
+      - TZ=Australia/Canberra
+    restart: unless-stopped # Ensure the container restarts automatically unless explicitly stopped
+    networks:
+      - flogr # Attach the service to the custom network
+
+networks:
+  flogr:
+    external: true  # Use the existing external network
+```
+
 ## Description
 
 fLOGr is a web-based fuel logging application intended to capture data from the pump each refuel of your vehicle. This data is stored into a SQLite3 database with Python crunching the data to be displayed in fLOGr using Flask and Jinga.
