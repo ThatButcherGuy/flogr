@@ -16,3 +16,6 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+# Potential OIDC/2FA integration entry points.
+# Current implementation assumes local Flask-Session auth; for Authentik,
+# add an OAuth client and map Authentik claims to the local user row here.

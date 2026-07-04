@@ -11,6 +11,11 @@ from datetime import date, datetime
 from io import StringIO
 
 from helpers import login_required
+import pyotp
+try:
+    from authlib.integrations.flask_client import OAuth
+except Exception:  # pragma: no cover - OIDC client optional at import time
+    OAuth = None
 
 # -------------------------
 # Flask Application Setup
@@ -63,6 +68,11 @@ tables = db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 )
 
+for column in ["two_factor_secret", "two_factor_enabled"]:
+    try:
+        db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+    except Exception:
+        pass
 if not tables:
     print("Database is empty — initializing from schema.sql")
     if not os.path.exists(SCHEMA_PATH):
@@ -134,17 +144,16 @@ def login():
             print('Invalid username or password.')
             return redirect(url_for("login"))
 
-        # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
-
-        # Update last_login in db
-        db.execute("""
-            UPDATE users
-            SET last_login = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """, session["user_id"])
-
-        # Redirect user to home page after successful login
+        user_id = rows[0]["id"]
+        user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+        if user.get("two_factor_enabled") and user.get("two_factor_secret"):
+            session["temp_user_id"] = user_id
+            return redirect(url_for("mfa_challenge", next=url_for("index")))
+        session["user_id"] = user_id
+        db.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+            user_id,
+        )
         return redirect(url_for("index"))
 
     # User reached route via GET (as by clicking a link or via redirect)
@@ -967,6 +976,76 @@ def edit_vehicle(registration):
     return render_template("edit_vehicle.html", vehicle=vehicle, fuel_types=fuel_types,
                            vehicle_types=vehicle_types, years=years)
     
+
+# ------------------------------------------------------------------
+# Two-factor authentication
+# ------------------------------------------------------------------
+@app.route("/account/mfa", methods=["GET", "POST"])
+@login_required
+def account_mfa():
+    user_id = session["user_id"]
+    user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+    if request.method == "POST":
+        secret = request.form.get("secret")
+        code = request.form.get("code", "").strip().replace(" ", "")
+        if user.get("two_factor_secret"):
+            flash("Two-factor authentication is already enabled.", "info")
+            return redirect(url_for("index"))
+        if not secret:
+            flash("Invalid setup.", "danger")
+            return redirect(url_for("account_mfa"))
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(code):
+            flash("Invalid verification code.", "danger")
+            return render_template("mfa_setup.html", secret=secret)
+        db.execute(
+            "UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE id = ?",
+            secret,
+            user_id,
+        )
+        flash("Two-factor authentication enabled.", "success")
+        return redirect(url_for("index"))
+    secret = pyotp.random_base32()
+    return render_template("mfa_setup.html", secret=secret)
+
+@app.route("/mfa", methods=["GET", "POST"])
+def mfa_challenge():
+    tmp = session.get("temp_user_id")
+    if not tmp:
+        return redirect(url_for("login"))
+    user = db.execute("SELECT * FROM users WHERE id = ?", tmp)[0]
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        totp = pyotp.TOTP(user.get("two_factor_secret") or "")
+        if totp.verify(code):
+            session.clear()
+            session["user_id"] = user["id"]
+            db.execute(
+                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                user["id"],
+            )
+            return redirect(url_for("index"))
+        flash("Invalid verification code.", "danger")
+    return render_template("mfa_challenge.html")
+
+@app.route("/account/mfa/disable", methods=["POST"])
+@login_required
+def disable_mfa():
+    user_id = session["user_id"]
+    code = request.form.get("code", "").strip().replace(" ", "")
+    user = db.execute("SELECT two_factor_secret, id FROM users WHERE id = ?", user_id)[0]
+    if not user.get("two_factor_secret"):
+        return redirect(url_for("index"))
+    totp = pyotp.TOTP(user["two_factor_secret"])
+    if not totp.verify(code):
+        flash("Invalid verification code.", "danger")
+        return redirect(url_for("index"))
+    db.execute(
+        "UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 WHERE id = ?",
+        user_id,
+    )
+    flash("Two-factor authentication disabled.", "success")
+    return redirect(url_for("index"))
 
 if __name__ == "__main__":
     app.run(debug=True)

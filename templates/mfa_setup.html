@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% block title %}Enable two-factor authentication{% endblock %}
+{% block main %}
+<h1>Enable two-factor authentication</h1>
+<p>Scan this secret in your authenticator app, then enter the code to confirm.</p>
+<form method="post">
+  <input type="hidden" name="secret" value="{{ secret }}" />
+  <div class="mb-3"><label>Verification code</label><input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" /></div>
+  <button class="btn btn-primary" type="submit">Verify</button>
+</form>
+{% endblock %}
