@@ -1,4 +1,4 @@
-from flask import redirect, session
+from flask import flash, redirect, session
 from functools import wraps
 
 
@@ -16,6 +16,32 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
-# Potential OIDC/2FA integration entry points.
-# Current implementation assumes local Flask-Session auth; for Authentik,
-# add an OAuth client and map Authentik claims to the local user row here.
+
+
+# OIDC / Authentik user claim mapping
+def get_or_create_user(db, username, email=None):
+    """
+    Map Authentik `preferred_username` claim to local user row.
+    Creates the user with a random password if not present.
+    Returns the user row dict, or None on failure.
+    """
+    username = username.lower()
+    rows = db.execute("SELECT * FROM users WHERE username = ?", username)
+    if rows:
+        return rows[0]
+
+    email = email or f"{username}@oidc.local"
+    password_hash = __import__("secrets").token_hex(32)
+    try:
+        db.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+            username,
+            email,
+            password_hash,
+        )
+    except Exception:
+        flash("Unable to provision user from OIDC.", "danger")
+        return None
+
+    rows = db.execute("SELECT * FROM users WHERE username = ?", username)
+    return rows[0]

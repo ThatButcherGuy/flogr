@@ -96,7 +96,7 @@ tables = db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 )
 
-for column in ["two_factor_secret", "two_factor_enabled"]:
+for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes"]:
     try:
         db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
     except Exception:
@@ -1075,13 +1075,23 @@ def account_mfa():
         if not totp.verify(code):
             flash("Invalid verification code.", "danger")
             return render_template("mfa_setup.html", secret=secret)
+        recovery_codes = [secrets.token_hex(4).upper() for _ in range(10)]
         db.execute(
-            "UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE id = ?",
+            "UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1, recovery_codes = ? WHERE id = ?",
             secret,
+            ",".join(recovery_codes),
             user_id,
         )
+        # NOTE: TOTP secrets and recovery codes are stored plaintext.
+        # For improved security, encrypt these fields at rest (e.g., via an
+        # application-level encryption key or KMS) in a future iteration.
         flash("Two-factor authentication enabled.", "success")
-        return redirect(url_for("index"))
+        return render_template(
+            "mfa_setup.html",
+            secret=secret,
+            recovery_codes=recovery_codes,
+            done=True,
+        )
     secret = pyotp.random_base32()
     return render_template("mfa_setup.html", secret=secret)
 
@@ -1093,16 +1103,35 @@ def mfa_challenge():
     user = db.execute("SELECT * FROM users WHERE id = ?", tmp)[0]
     if request.method == "POST":
         code = request.form.get("code", "").strip().replace(" ", "")
-        totp = pyotp.TOTP(user.get("two_factor_secret") or "")
-        if totp.verify(code):
-            session.clear()
-            session["user_id"] = user["id"]
-            db.execute(
-                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
-                user["id"],
-            )
-            return redirect(url_for("index"))
-        flash("Invalid verification code.", "danger")
+        recovery_code = request.form.get("recovery_code", "").strip().upper()
+        if code:
+            totp = pyotp.TOTP(user.get("two_factor_secret") or "")
+            if totp.verify(code):
+                session.clear()
+                session["user_id"] = user["id"]
+                db.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                    user["id"],
+                )
+                return redirect(url_for("index"))
+        if recovery_code:
+            stored = (user.get("recovery_codes") or "").split(",")
+            if recovery_code in stored:
+                stored.remove(recovery_code)
+                db.execute(
+                    "UPDATE users SET recovery_codes = ? WHERE id = ?",
+                    ",".join(stored),
+                    user["id"],
+                )
+                session.clear()
+                session["user_id"] = user["id"]
+                db.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                    user["id"],
+                )
+                flash("Logged in with recovery code. Consider generating new ones.", "warning")
+                return redirect(url_for("index"))
+        flash("Invalid verification code or recovery code.", "danger")
     return render_template("mfa_challenge.html")
 
 @app.route("/account/mfa/disable", methods=["POST"])

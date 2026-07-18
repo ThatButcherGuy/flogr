@@ -2,10 +2,26 @@
 {% block title %}Enable two-factor authentication{% endblock %}
 {% block main %}
 <h1>Enable two-factor authentication</h1>
+{% if recovery_codes %}
+  <div class="alert alert-success">
+    Two-factor authentication enabled. Save these recovery codes in a safe place.
+    Each can be used once.
+  </div>
+  <div class="card mx-auto" style="max-width:400px">
+    <div class="card-body">
+      <ul class="list-group">
+        {% for code in recovery_codes %}
+        <li class="list-group-item text-monospace">{{ code }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+{% else %}
 <p>Scan this secret in your authenticator app, then enter the code to confirm.</p>
 <form method="post">
   <input type="hidden" name="secret" value="{{ secret }}" />
   <div class="mb-3"><label>Verification code</label><input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" /></div>
   <button class="btn btn-primary" type="submit">Verify</button>
 </form>
+{% endif %}
 {% endblock %}

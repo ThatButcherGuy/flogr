@@ -17,7 +17,13 @@
     </div>
     <button class="btn btn-primary" type="submit">Log In</button>
 </form>
+{% if oidc_enabled %}
 <br>or<br>
+<form action="/login/oidc" method="get">
+    <button type="submit" class="btn btn-outline-secondary">Log in with Authentik</button>
+</form>
+<br>or<br>
+{% endif %}
 <form action="/register" method="get">
     <button class="btn btn-primary" type="submit">Register</button>
 </form>
