@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import csv
+import secrets
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for, Response
@@ -10,7 +11,7 @@ from email_validator import validate_email, EmailNotValidError
 from datetime import date, datetime
 from io import StringIO
 
-from helpers import login_required
+from helpers import login_required, get_or_create_user
 import pyotp
 try:
     from authlib.integrations.flask_client import OAuth
@@ -29,6 +30,28 @@ app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
 # -------------------------
+# OIDC / Authentik client setup
+# -------------------------
+oauth = None
+OIDC_REGISTERED = False
+if OAuth is not None and AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET and AUTHENTIK_ISSUER_URL:
+    try:
+        oauth = OAuth(app)
+        oauth.register(
+            name="authentik",
+            client_id=AUTHENTIK_CLIENT_ID,
+            client_secret=AUTHENTIK_CLIENT_SECRET,
+            server_metadata_url=f"{AUTHENTIK_ISSUER_URL.rstrip('/')}/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid profile email"},
+        )
+        OIDC_REGISTERED = True
+    except Exception:
+        OIDC_REGISTERED = False
+
+# Expose oidc flag to templates
+app.jinja_env.globals["oidc_enabled"] = OIDC_REGISTERED
+
+# -------------------------
 # Database Setup
 # -------------------------
 
@@ -38,6 +61,11 @@ DB_PATH = os.getenv(
 )
 DB_DIR = os.path.dirname(DB_PATH)
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "static", "schema.sql")
+
+# Authentik OIDC configuration
+AUTHENTIK_CLIENT_ID = os.getenv("AUTHENTIK_CLIENT_ID", "")
+AUTHENTIK_CLIENT_SECRET = os.getenv("AUTHENTIK_CLIENT_SECRET", "")
+AUTHENTIK_ISSUER_URL = os.getenv("AUTHENTIK_ISSUER_URL", "")
 
 # Ensure DB directory exists
 os.makedirs(DB_DIR, exist_ok=True)
@@ -170,6 +198,55 @@ def logout():
 
     # Redirect user to login form
     return redirect("/")
+
+
+# ------------------------------------------------------------------
+# OIDC / Authentik authentication
+# ------------------------------------------------------------------
+@app.route("/login/oidc", methods=["GET"])
+def login_oidc():
+    if not OIDC_REGISTERED or oauth is None:
+        flash("OIDC login is not configured.", "danger")
+        return redirect(url_for("login"))
+    assert oauth is not None
+    return oauth.authentik.authorize_redirect(
+        url_for("login_oidc_callback", _external=True)
+    )
+
+
+@app.route("/login/oidc/callback", methods=["GET", "POST"])
+def login_oidc_callback():
+    if not OIDC_REGISTERED or oauth is None:
+        flash("OIDC login is not configured.", "danger")
+        return redirect(url_for("login"))
+    assert oauth is not None
+    try:
+        token = oauth.authentik.authorize_access_token()
+        claims = token.get("userinfo")
+        if claims is None:
+            claims = oauth.authentik.userinfo()
+    except Exception as e:
+        flash(f"OIDC authentication failed: {e}", "danger")
+        return redirect(url_for("login"))
+
+    username = claims.get("preferred_username")
+    email = claims.get("email", "")
+    if not username:
+        flash("No username received from OIDC provider.", "danger")
+        return redirect(url_for("login"))
+
+    user = get_or_create_user(db, username, email)
+    if user is None:
+        flash("Unable to log in via OIDC.", "danger")
+        return redirect(url_for("login"))
+
+    session.clear()
+    session["user_id"] = user["id"]
+    db.execute(
+        "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", user["id"]
+    )
+    flash("Logged in via Authentik.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/register", methods=["GET", "POST"])
