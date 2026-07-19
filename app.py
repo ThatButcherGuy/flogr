@@ -218,7 +218,7 @@ def login_oidc():
         return redirect(url_for("login"))
     assert oauth is not None
     return oauth.authentik.authorize_redirect(
-        url_for("login_oidc_callback", _external=True)
+        url_for("login_oidc_callback", _external=True, _scheme="https")
     )
 
 
