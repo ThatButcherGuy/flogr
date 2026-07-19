@@ -96,11 +96,17 @@ tables = db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 )
 
-for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes"]:
+for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oidc_enabled"]:
     try:
         db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
     except Exception:
         pass
+
+# Set oidc_enabled default for existing users who have it NULL
+# Default to enabled so existing users get the OIDC option
+db.execute(
+    "UPDATE users SET oidc_enabled = 1 WHERE oidc_enabled IS NULL"
+)
 if not tables:
     print("Database is empty — initializing from schema.sql")
     if not os.path.exists(SCHEMA_PATH):
@@ -226,7 +232,11 @@ def login_oidc_callback():
         if claims is None:
             claims = oauth.authentik.userinfo()
     except Exception as e:
-        flash(f"OIDC authentication failed: {e}", "danger")
+        flash(
+            "Authentik is unreachable. Use your password to log in instead. "
+            f"({e})",
+            "warning",
+        )
         return redirect(url_for("login"))
 
     username = claims.get("preferred_username")
@@ -1064,12 +1074,30 @@ def account():
     user_id = session["user_id"]
     user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
     two_factor = bool(user.get("two_factor_enabled"))
+    user_oidc = bool(int(user.get("oidc_enabled") or 0))
     return render_template(
         "account.html",
         user=user,
         two_factor=two_factor,
-        oidc_enabled_template=OIDC_REGISTERED,
+        user_oidc_enabled=user_oidc,
+        oidc_globally_enabled=OIDC_REGISTERED,
     )
+
+
+@app.route("/account/oidc/toggle", methods=["POST"])
+@login_required
+def account_oidc_toggle():
+    """Toggle whether OIDC/Authentik login is preferred for this user"""
+    user_id = session["user_id"]
+    user = db.execute("SELECT oidc_enabled FROM users WHERE id = ?", user_id)[0]
+    current = int(user.get("oidc_enabled") or 0)
+    new_val = 1 if not current else 0
+    db.execute("UPDATE users SET oidc_enabled = ? WHERE id = ?", str(new_val), user_id)
+    flash(
+        "Authentik login " + ("enabled." if new_val else "disabled."),
+        "success",
+    )
+    return redirect(url_for("account"))
 
 
 @app.route("/account/mfa", methods=["GET", "POST"])
