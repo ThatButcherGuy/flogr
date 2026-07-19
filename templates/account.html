@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Account Security
+{% endblock %}
+
+{% block main %}
+<h2>Account Security</h2>
+<br>
+
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Authentication</h5>
+  </div>
+  <ul class="list-group list-group-flush text-start">
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Username</strong><br><small class="text-muted">{{ user.username }}</small></span>
+    </li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Email</strong><br><small class="text-muted">{{ user.email }}</small></span>
+    </li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Authentik (OIDC)</strong><br>
+        <small class="text-muted">
+          {% if oidc_enabled_template %}
+            Configured &amp; available
+          {% else %}
+            Not configured (local password login only)
+          {% endif %}
+        </small>
+      </span>
+      {% if oidc_enabled_template %}
+        <span class="badge bg-success rounded-pill">Active</span>
+      {% else %}
+        <span class="badge bg-secondary rounded-pill">Disabled</span>
+      {% endif %}
+    </li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Two-Factor Authentication (TOTP)</strong><br>
+        <small class="text-muted">
+          {% if two_factor %}
+            Enabled &mdash; an authenticator app code is required at login
+          {% else %}
+            Disabled &mdash; add an extra layer of security
+          {% endif %}
+        </small>
+      </span>
+      <span>
+        {% if two_factor %}
+          <span class="badge bg-success rounded-pill">Enabled</span>
+        {% else %}
+          <span class="badge bg-secondary rounded-pill">Disabled</span>
+        {% endif %}
+      </span>
+    </li>
+  </ul>
+</div>
+
+<div class="d-flex justify-content-center gap-3 flex-wrap">
+  {% if two_factor %}
+    <form action="{{ url_for('disable_mfa') }}" method="post" class="d-inline">
+      <div class="mb-2">
+        <label for="disable_code" class="form-label visually-hidden">Current TOTP code to disable</label>
+        <input id="disable_code" name="code" class="form-control mx-auto" style="max-width:200px" autocomplete="one-time-code" inputmode="numeric" placeholder="Current TOTP code" required>
+      </div>
+      <button type="submit" class="btn btn-danger">Disable 2FA</button>
+    </form>
+  {% else %}
+    <a href="{{ url_for('account_mfa') }}" class="btn btn-primary">Enable Two-Factor Authentication</a>
+  {% endif %}
+  {% if oidc_enabled_template %}
+    <a href="{{ url_for('login_oidc') }}" class="btn btn-outline-secondary">Log in with Authentik</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+{% endblock %}

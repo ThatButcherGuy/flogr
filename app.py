@@ -1057,6 +1057,21 @@ def edit_vehicle(registration):
 # ------------------------------------------------------------------
 # Two-factor authentication
 # ------------------------------------------------------------------
+@app.route("/account")
+@login_required
+def account():
+    """Account / Security settings page"""
+    user_id = session["user_id"]
+    user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+    two_factor = bool(user.get("two_factor_enabled"))
+    return render_template(
+        "account.html",
+        user=user,
+        two_factor=two_factor,
+        oidc_enabled_template=OIDC_REGISTERED,
+    )
+
+
 @app.route("/account/mfa", methods=["GET", "POST"])
 @login_required
 def account_mfa():
@@ -1151,7 +1166,7 @@ def disable_mfa():
         user_id,
     )
     flash("Two-factor authentication disabled.", "success")
-    return redirect(url_for("index"))
+    return redirect(url_for("account"))
 
 if __name__ == "__main__":
     app.run(debug=True)
