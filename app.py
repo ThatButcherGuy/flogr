@@ -1119,7 +1119,8 @@ def account_mfa():
         totp = pyotp.TOTP(secret)
         if not totp.verify(code):
             flash("Invalid verification code.", "danger")
-            return render_template("mfa_setup.html", secret=secret)
+            uri = totp.provisioning_uri(name=user["username"], issuer_name="fLOGr")
+            return render_template("mfa_setup.html", secret=secret, provisioning_uri=uri)
         recovery_codes = [secrets.token_hex(4).upper() for _ in range(10)]
         db.execute(
             "UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1, recovery_codes = ? WHERE id = ?",
@@ -1138,7 +1139,9 @@ def account_mfa():
             done=True,
         )
     secret = pyotp.random_base32()
-    return render_template("mfa_setup.html", secret=secret)
+    totp = pyotp.TOTP(secret)
+    uri = totp.provisioning_uri(name=user["username"], issuer_name="fLOGr")
+    return render_template("mfa_setup.html", secret=secret, provisioning_uri=uri)
 
 @app.route("/mfa", methods=["GET", "POST"])
 def mfa_challenge():
