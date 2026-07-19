@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Account Security
+{% endblock %}
+
+{% block main %}
+<h2>Account Security</h2>
+<br>
+
+<!-- Authentication Status Card -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Authentication</h5>
+  </div>
+  <ul class="list-group list-group-flush text-start">
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Username</strong><br><small class="text-muted">{{ user.username }}</small></span>
+    </li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Email</strong><br><small class="text-muted">{{ user.email }}</small></span>
+    </li>
+    {% if oidc_globally_enabled %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Authentik (OIDC Login)</strong><br>
+        <small class="text-muted">
+          {% if user_oidc_enabled %}
+            Enabled &mdash; use the Authentik button on the login page
+          {% else %}
+            Disabled &mdash; use password login instead
+          {% endif %}
+        </small>
+      </span>
+      <form action="{{ url_for('account_oidc_toggle') }}" method="post" class="d-inline">
+        <button type="submit" class="btn btn-sm {% if user_oidc_enabled %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+          {% if user_oidc_enabled %}Disable{% else %}Enable{% endif %}
+        </button>
+      </form>
+    </li>
+    {% else %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Authentik (OIDC Login)</strong><br>
+        <small class="text-muted">Not configured &mdash; local password login only</small>
+      </span>
+      <span class="badge bg-secondary rounded-pill">Unavailable</span>
+    </li>
+    {% endif %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Two-Factor Authentication (TOTP)</strong><br>
+        <small class="text-muted">
+          {% if two_factor %}
+            Enabled &mdash; an authenticator app code is required after password login
+          {% else %}
+            Disabled &mdash; add an extra layer of security for password login
+          {% endif %}
+        </small>
+      </span>
+      <span>
+        {% if two_factor %}
+          <span class="badge bg-success rounded-pill">Enabled</span>
+        {% else %}
+          <span class="badge bg-secondary rounded-pill">Disabled</span>
+        {% endif %}
+      </span>
+    </li>
+  </ul>
+</div>
+
+<!-- Auth Fallback Info Card -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Login Fallback Order</h5>
+  </div>
+  <div class="card-body text-start">
+    <ol class="mb-0" style="line-height:1.8">
+      <li><strong>Authentik (OIDC)</strong> — preferred if enabled and available</li>
+      <li><strong>Password + 2FA</strong> — fallback if Authentik is offline or unavailable</li>
+      <li><strong>Password only</strong> — if 2FA is disabled</li>
+    </ol>
+    <small class="text-muted d-block mt-2">
+      If Authentik fails to respond, you'll be returned to the login page to use your password.
+    </small>
+  </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="d-flex justify-content-center gap-3 flex-wrap">
+  {% if two_factor %}
+    <form action="{{ url_for('disable_mfa') }}" method="post" class="d-inline">
+      <div class="mb-2">
+        <label for="disable_code" class="form-label visually-hidden">Current TOTP code to disable</label>
+        <input id="disable_code" name="code" class="form-control mx-auto" style="max-width:200px" autocomplete="one-time-code" inputmode="numeric" placeholder="Current TOTP code" required>
+      </div>
+      <button type="submit" class="btn btn-danger">Disable 2FA</button>
+    </form>
+  {% else %}
+    <a href="{{ url_for('account_mfa') }}" class="btn btn-primary">Enable Two-Factor Authentication</a>
+  {% endif %}
+  {% if oidc_globally_enabled and user_oidc_enabled %}
+    <a href="{{ url_for('login_oidc') }}" class="btn btn-outline-secondary">Log in with Authentik</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+{% endblock %}

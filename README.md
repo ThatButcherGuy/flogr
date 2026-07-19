@@ -4,8 +4,6 @@
 
 ## docker-compose.yml
 ```yml
-version: "3.9"
-
 services:
   flogr:
     image: docker.io/thatbutcherguy/flogr-docker:latest
@@ -20,6 +18,10 @@ services:
       - PUID=568
       - PGID=568
       - TZ=Australia/Canberra
+      # Optional: Authentik OIDC — set these to enable SSO login
+      # - AUTHENTIK_CLIENT_ID=********
+      # - AUTHENTIK_CLIENT_SECRET=********
+      # - AUTHENTIK_ISSUER_URL=https://auth.example.com/application/o/flogr/
     restart: unless-stopped # Ensure the container restarts automatically unless explicitly stopped
     networks:
       - flogr # Attach the service to the custom network
@@ -34,6 +36,47 @@ networks:
 fLOGr is a web-based fuel logging application intended to capture data from the pump each refuel of your vehicle. This data is stored into a SQLite3 database with Python crunching the data to be displayed in fLOGr using Flask and Jinga.
 
 fLOGr has been developed by Brenden Taylor (GitHub user: ThatButcherGuy) as the final project for the Harvard CS50x class of 2024.
+
+---
+
+### Authentication
+
+fLOGr supports two authentication methods, switchable in the **Account Security** page (`/account`):
+
+| Method | Description |
+|--------|-------------|
+| **Password login** | Default — username + password, hashed with Werkzeug |
+| **Authentik (OIDC)** | SSO via Authentik — optional, configured via environment variables |
+
+#### Login Fallback Order
+
+1. **Authentik (OIDC)** — preferred when enabled and available
+2. **Password + 2FA** — fallback if Authentik is offline
+3. **Password only** — if 2FA is disabled
+
+If Authentik is unreachable, the login page shows a clear warning and the user can use their password instead.
+
+#### Two-Factor Authentication (TOTP)
+
+Users can enable TOTP-based 2FA from the Account Security page:
+
+1. Navigate to **Account** in the navbar
+2. Click **Enable Two-Factor Authentication**
+3. Scan the secret into your authenticator app (Authy, Google Authenticator, 1Password, etc.)
+4. Enter the verification code to confirm
+5. **Save the 10 recovery codes** — each can be used once if you lose access to your authenticator app
+
+Users with 2FA enabled will be prompted for a TOTP code after entering their password. 2FA is only enforced for password login — Authentik handles its own MFA.
+
+#### Account Security Page
+
+The `/account` page (linked in the navbar when logged in) shows:
+
+- Username and email
+- Authentik (OIDC) status — enable/disable per-user
+- Two-Factor Authentication status — enable/disable
+- Login fallback order explanation
+- Quick-action buttons for enabling/disabling 2FA and logging in via Authentik
 
 ---
 
@@ -303,7 +346,11 @@ The SQLite3 Database contains four tables:
 
 This table contains an `id` field to uniquely identify all `users` who register on fLOGr. This `id` is used across the `vehicles` and `log` tables to ensure the correct data is displayed for the logged in user.
 
-There are also fields in this table that are not currently used however in future versions it is anticipated that these fields will enable a profile type page along with email notifications and marketing opportunities.
+Auth-related columns added in v2.1:
+  - `two_factor_secret` — TOTP secret key (set when 2FA is enabled)
+  - `two_factor_enabled` — `1` if 2FA is active, `NULL` otherwise
+  - `recovery_codes` — comma-separated recovery codes (10 codes, each usable once)
+  - `oidc_enabled` — `1` if the user has Authentik/OIDC login enabled, `0` otherwise
 
 `fuel_types`:
 

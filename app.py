@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import csv
+import secrets
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for, Response
@@ -10,7 +11,12 @@ from email_validator import validate_email, EmailNotValidError
 from datetime import date, datetime
 from io import StringIO
 
-from helpers import login_required
+from helpers import login_required, get_or_create_user
+import pyotp
+try:
+    from authlib.integrations.flask_client import OAuth
+except Exception:  # pragma: no cover - OIDC client optional at import time
+    OAuth = None
 
 # -------------------------
 # Flask Application Setup
@@ -22,6 +28,35 @@ app.secret_key = os.getenv("SECRET_KEY", "default_secret_key")
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
+
+# -------------------------
+# Authentik OIDC configuration
+# -------------------------
+AUTHENTIK_CLIENT_ID = os.getenv("AUTHENTIK_CLIENT_ID", "")
+AUTHENTIK_CLIENT_SECRET = os.getenv("AUTHENTIK_CLIENT_SECRET", "")
+AUTHENTIK_ISSUER_URL = os.getenv("AUTHENTIK_ISSUER_URL", "")
+
+# -------------------------
+# OIDC / Authentik client setup
+# -------------------------
+oauth = None
+OIDC_REGISTERED = False
+if OAuth is not None and AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET and AUTHENTIK_ISSUER_URL:
+    try:
+        oauth = OAuth(app)
+        oauth.register(
+            name="authentik",
+            client_id=AUTHENTIK_CLIENT_ID,
+            client_secret=AUTHENTIK_CLIENT_SECRET,
+            server_metadata_url=f"{AUTHENTIK_ISSUER_URL.rstrip('/')}/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid profile email"},
+        )
+        OIDC_REGISTERED = True
+    except Exception:
+        OIDC_REGISTERED = False
+
+# Expose oidc flag to templates
+app.jinja_env.globals["oidc_enabled"] = OIDC_REGISTERED
 
 # -------------------------
 # Database Setup
@@ -63,6 +98,17 @@ tables = db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 )
 
+for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oidc_enabled"]:
+    try:
+        db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+    except Exception:
+        pass
+
+# Set oidc_enabled default for existing users who have it NULL
+# Default to enabled so existing users get the OIDC option
+db.execute(
+    "UPDATE users SET oidc_enabled = 1 WHERE oidc_enabled IS NULL"
+)
 if not tables:
     print("Database is empty — initializing from schema.sql")
     if not os.path.exists(SCHEMA_PATH):
@@ -134,17 +180,16 @@ def login():
             print('Invalid username or password.')
             return redirect(url_for("login"))
 
-        # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
-
-        # Update last_login in db
-        db.execute("""
-            UPDATE users
-            SET last_login = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """, session["user_id"])
-
-        # Redirect user to home page after successful login
+        user_id = rows[0]["id"]
+        user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+        if user.get("two_factor_enabled") and user.get("two_factor_secret"):
+            session["temp_user_id"] = user_id
+            return redirect(url_for("mfa_challenge", next=url_for("index")))
+        session["user_id"] = user_id
+        db.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+            user_id,
+        )
         return redirect(url_for("index"))
 
     # User reached route via GET (as by clicking a link or via redirect)
@@ -161,6 +206,59 @@ def logout():
 
     # Redirect user to login form
     return redirect("/")
+
+
+# ------------------------------------------------------------------
+# OIDC / Authentik authentication
+# ------------------------------------------------------------------
+@app.route("/login/oidc", methods=["GET"])
+def login_oidc():
+    if not OIDC_REGISTERED or oauth is None:
+        flash("OIDC login is not configured.", "danger")
+        return redirect(url_for("login"))
+    assert oauth is not None
+    return oauth.authentik.authorize_redirect(
+        url_for("login_oidc_callback", _external=True)
+    )
+
+
+@app.route("/login/oidc/callback", methods=["GET", "POST"])
+def login_oidc_callback():
+    if not OIDC_REGISTERED or oauth is None:
+        flash("OIDC login is not configured.", "danger")
+        return redirect(url_for("login"))
+    assert oauth is not None
+    try:
+        token = oauth.authentik.authorize_access_token()
+        claims = token.get("userinfo")
+        if claims is None:
+            claims = oauth.authentik.userinfo()
+    except Exception as e:
+        flash(
+            "Authentik is unreachable. Use your password to log in instead. "
+            f"({e})",
+            "warning",
+        )
+        return redirect(url_for("login"))
+
+    username = claims.get("preferred_username")
+    email = claims.get("email", "")
+    if not username:
+        flash("No username received from OIDC provider.", "danger")
+        return redirect(url_for("login"))
+
+    user = get_or_create_user(db, username, email)
+    if user is None:
+        flash("Unable to log in via OIDC.", "danger")
+        return redirect(url_for("login"))
+
+    session.clear()
+    session["user_id"] = user["id"]
+    db.execute(
+        "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", user["id"]
+    )
+    flash("Logged in via Authentik.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -967,6 +1065,138 @@ def edit_vehicle(registration):
     return render_template("edit_vehicle.html", vehicle=vehicle, fuel_types=fuel_types,
                            vehicle_types=vehicle_types, years=years)
     
+
+# ------------------------------------------------------------------
+# Two-factor authentication
+# ------------------------------------------------------------------
+@app.route("/account")
+@login_required
+def account():
+    """Account / Security settings page"""
+    user_id = session["user_id"]
+    user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+    two_factor = bool(user.get("two_factor_enabled"))
+    user_oidc = bool(int(user.get("oidc_enabled") or 0))
+    return render_template(
+        "account.html",
+        user=user,
+        two_factor=two_factor,
+        user_oidc_enabled=user_oidc,
+        oidc_globally_enabled=OIDC_REGISTERED,
+    )
+
+
+@app.route("/account/oidc/toggle", methods=["POST"])
+@login_required
+def account_oidc_toggle():
+    """Toggle whether OIDC/Authentik login is preferred for this user"""
+    user_id = session["user_id"]
+    user = db.execute("SELECT oidc_enabled FROM users WHERE id = ?", user_id)[0]
+    current = int(user.get("oidc_enabled") or 0)
+    new_val = 1 if not current else 0
+    db.execute("UPDATE users SET oidc_enabled = ? WHERE id = ?", str(new_val), user_id)
+    flash(
+        "Authentik login " + ("enabled." if new_val else "disabled."),
+        "success",
+    )
+    return redirect(url_for("account"))
+
+
+@app.route("/account/mfa", methods=["GET", "POST"])
+@login_required
+def account_mfa():
+    user_id = session["user_id"]
+    user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
+    if request.method == "POST":
+        secret = request.form.get("secret")
+        code = request.form.get("code", "").strip().replace(" ", "")
+        if user.get("two_factor_secret"):
+            flash("Two-factor authentication is already enabled.", "info")
+            return redirect(url_for("index"))
+        if not secret:
+            flash("Invalid setup.", "danger")
+            return redirect(url_for("account_mfa"))
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(code):
+            flash("Invalid verification code.", "danger")
+            return render_template("mfa_setup.html", secret=secret)
+        recovery_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+        db.execute(
+            "UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1, recovery_codes = ? WHERE id = ?",
+            secret,
+            ",".join(recovery_codes),
+            user_id,
+        )
+        # NOTE: TOTP secrets and recovery codes are stored plaintext.
+        # For improved security, encrypt these fields at rest (e.g., via an
+        # application-level encryption key or KMS) in a future iteration.
+        flash("Two-factor authentication enabled.", "success")
+        return render_template(
+            "mfa_setup.html",
+            secret=secret,
+            recovery_codes=recovery_codes,
+            done=True,
+        )
+    secret = pyotp.random_base32()
+    return render_template("mfa_setup.html", secret=secret)
+
+@app.route("/mfa", methods=["GET", "POST"])
+def mfa_challenge():
+    tmp = session.get("temp_user_id")
+    if not tmp:
+        return redirect(url_for("login"))
+    user = db.execute("SELECT * FROM users WHERE id = ?", tmp)[0]
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        recovery_code = request.form.get("recovery_code", "").strip().upper()
+        if code:
+            totp = pyotp.TOTP(user.get("two_factor_secret") or "")
+            if totp.verify(code):
+                session.clear()
+                session["user_id"] = user["id"]
+                db.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                    user["id"],
+                )
+                return redirect(url_for("index"))
+        if recovery_code:
+            stored = (user.get("recovery_codes") or "").split(",")
+            if recovery_code in stored:
+                stored.remove(recovery_code)
+                db.execute(
+                    "UPDATE users SET recovery_codes = ? WHERE id = ?",
+                    ",".join(stored),
+                    user["id"],
+                )
+                session.clear()
+                session["user_id"] = user["id"]
+                db.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                    user["id"],
+                )
+                flash("Logged in with recovery code. Consider generating new ones.", "warning")
+                return redirect(url_for("index"))
+        flash("Invalid verification code or recovery code.", "danger")
+    return render_template("mfa_challenge.html")
+
+@app.route("/account/mfa/disable", methods=["POST"])
+@login_required
+def disable_mfa():
+    user_id = session["user_id"]
+    code = request.form.get("code", "").strip().replace(" ", "")
+    user = db.execute("SELECT two_factor_secret, id FROM users WHERE id = ?", user_id)[0]
+    if not user.get("two_factor_secret"):
+        return redirect(url_for("index"))
+    totp = pyotp.TOTP(user["two_factor_secret"])
+    if not totp.verify(code):
+        flash("Invalid verification code.", "danger")
+        return redirect(url_for("index"))
+    db.execute(
+        "UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 WHERE id = ?",
+        user_id,
+    )
+    flash("Two-factor authentication disabled.", "success")
+    return redirect(url_for("account"))
 
 if __name__ == "__main__":
     app.run(debug=True)
