@@ -30,6 +30,13 @@ app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
 # -------------------------
+# Authentik OIDC configuration
+# -------------------------
+AUTHENTIK_CLIENT_ID = os.getenv("AUTHENTIK_CLIENT_ID", "")
+AUTHENTIK_CLIENT_SECRET = os.getenv("AUTHENTIK_CLIENT_SECRET", "")
+AUTHENTIK_ISSUER_URL = os.getenv("AUTHENTIK_ISSUER_URL", "")
+
+# -------------------------
 # OIDC / Authentik client setup
 # -------------------------
 oauth = None
@@ -61,11 +68,6 @@ DB_PATH = os.getenv(
 )
 DB_DIR = os.path.dirname(DB_PATH)
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "static", "schema.sql")
-
-# Authentik OIDC configuration
-AUTHENTIK_CLIENT_ID = os.getenv("AUTHENTIK_CLIENT_ID", "")
-AUTHENTIK_CLIENT_SECRET = os.getenv("AUTHENTIK_CLIENT_SECRET", "")
-AUTHENTIK_ISSUER_URL = os.getenv("AUTHENTIK_ISSUER_URL", "")
 
 # Ensure DB directory exists
 os.makedirs(DB_DIR, exist_ok=True)
