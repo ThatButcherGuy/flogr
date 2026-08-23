@@ -86,7 +86,8 @@ document.addEventListener('DOMContentLoaded', function () {
             allLogs = data.logs || [];
             populateFilterOptions(data);
             bindFilters();
-            render();
+            initCharts();   // create charts once
+            render();       // first render after data is ready
         })
         .catch(err => { console.error('Failed to load stats:', err); });
 
@@ -128,6 +129,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const totalKm = logs.reduce((s, l) => s + l.kilometres, 0);
         const avgLpk = totalKm ? (totalLitres / totalKm * 100) : 0;
         const avgPrice = totalLitres ? (totalSpend / totalLitres) : 0;
+        const costPer100 = (totalKm ? (totalSpend / totalKm * 100) : 0);
+        const avgCostPerTank = logs.length ? (totalSpend / logs.length) : 0;
         const tankCount = logs.length;
         const cards = [
             ['Tank fill-ups', tankCount],
@@ -136,49 +139,107 @@ document.addEventListener('DOMContentLoaded', function () {
             ['Total km', totalKm.toLocaleString() + ' km'],
             ['Avg economy', avgLpk.toFixed(2) + ' L/100km'],
             ['Avg price/L', '$' + avgPrice.toFixed(3)],
+            ['Avg cost/tank', '$' + avgCostPerTank.toFixed(2)],
+            ['Cost /100km', '$' + costPer100.toFixed(2)],
         ];
         el.innerHTML = cards.map(([label, val]) =>
-            `<div class="col-md-2 col-6"><div class="card stat-card h-100">
+            `<div class="col-md-3 col-6"><div class="card stat-card h-100">
                <div class="stat-value">${val}</div>
                <div class="stat-label">${label}</div></div></div>`).join('');
     }
 
-    function renderCharts(logs) {
-        const dates = logs.map(l => l.date);
-        const economy = logs.map(l => l.litres_per_100km);
-        const prices = logs.map(l => l.price_per_litre);
-        const litres = logs.map(l => l.litres);
+    // Aggregate a numeric field into monthly buckets. Dates sorted asc.
+    function monthly(logs, field) {
+        const buckets = {};
+        logs.forEach(l => {
+            const key = l.date.slice(0, 7); // YYYY-MM
+            const v = l[field];
+            if (!buckets[key]) buckets[key] = { sum: 0, n: 0, totalKm: 0, totalL: 0 };
+            buckets[key].sum += isNaN(v) ? 0 : v;
+            buckets[key].n += 1;
+            buckets[key].totalKm += l.kilometres || 0;
+            buckets[key].totalL += l.litres || 0;
+        });
+        const keys = Object.keys(buckets).sort();
+        return {
+            labels: keys.map(k => k),
+            values: keys.map(k => buckets[k].sum / buckets[k].n), // mean of field
+        };
+    }
 
-        // Fuel economy line
-        new Chart($('chartEconomy'), {
+    // Aggregate price-per-litre and L/100km (the two priority metrics) into
+    // monthly AVERAGES to smooth noise and make the trend readable.
+    function chartData(logs) {
+        const byMonth = {};
+        logs.forEach(l => {
+            const key = l.date.slice(0, 7);
+            if (!byMonth[key]) byMonth[key] = { p: 0, l: 0, n: 0 };
+            byMonth[key].p += l.price_per_litre;
+            byMonth[key].l += l.litres_per_100km;
+            byMonth[key].n += 1;
+        });
+        const keys = Object.keys(byMonth).sort();
+        return {
+            labels: keys,
+            price: keys.map(k => +(byMonth[k].p / byMonth[k].n).toFixed(3)),
+            economy: keys.map(k => +(byMonth[k].l / byMonth[k].n).toFixed(2)),
+            litres: logs.map(l => l.date.slice(0,7)) // per-log for bar if desired
+        };
+    }
+
+    // Store chart instances once; update in place on filter change (no re-init loop)
+    const charts = {};
+
+    function initCharts() {
+        charts.economy = new Chart($('chartEconomy'), {
             type: 'line',
-            data: { labels: dates, datasets: [{ label: 'L/100km', data: economy, borderColor: '#0D3BE7', backgroundColor: 'rgba(13,59,231,0.1)', fill: true, tension: 0.2 }] },
+            data: { labels: [], datasets: [{ label: 'L/100km (monthly avg)', data: [], borderColor: '#0D3BE7', backgroundColor: 'rgba(13,59,231,0.1)', fill: true, tension: 0.2 }] },
             options: baseOpts('L/100km')
         });
-        // Price line
-        new Chart($('chartPrice'), {
+        charts.price = new Chart($('chartPrice'), {
             type: 'line',
-            data: { labels: dates, datasets: [{ label: 'Price/L', data: prices, borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,0.12)', fill: true, tension: 0.2 }] },
-            options: baseOpts('$ / litre')
+            data: { labels: [], datasets: [{ label: 'Cost per litre (monthly avg)', data: [], borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,0.12)', fill: true, tension: 0.2 }] },
+            options: baseOpts('$/L')
         });
-        // Litres bar
-        new Chart($('chartLitres'), {
+        charts.litres = new Chart($('chartLitres'), {
             type: 'bar',
-            data: { labels: dates, datasets: [{ label: 'Litres', data: litres, backgroundColor: 'rgba(13,59,231,0.55)' }] },
+            data: { labels: [], datasets: [{ label: 'Litres (monthly)', data: [], backgroundColor: 'rgba(13,59,231,0.55)' }] },
             options: baseOpts('Litres')
         });
-        // Spend by location doughnut
-        const byLoc = {};
-        logs.forEach(l => {
-            const key = l.location || 'Unspecified';
-            byLoc[key] = (byLoc[key] || 0) + l.sale_price;
-        });
-        const locLabels = Object.keys(byLoc), locVals = Object.values(byLoc);
-        new Chart($('chartLocations'), {
+        charts.locations = new Chart($('chartLocations'), {
             type: 'pie',
-            data: { labels: locLabels, datasets: [{ data: locVals, backgroundColor: ['#0D3BE7','#F4E24A','#1f9d55','#DC2229','#3eef16','#a85ad1'] }] },
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ['#0D3BE7','#F4E24A','#1f9d55','#DC2229','#3eef16','#a85ad1','#a85ad1','#e67e22','#2980b9'] }] },
             options: { responsive: true, plugins: { legend: { position: 'right' } } }
         });
+    }
+
+    function updateCharts(logs) {
+        if (!logs.length) return;
+        const d = chartData(logs);
+
+        charts.economy.data.labels = d.labels;
+        charts.economy.data.datasets[0].data = d.economy;
+        charts.economy.update();
+
+        charts.price.data.labels = d.labels;
+        charts.price.data.datasets[0].data = d.price;
+        charts.price.update();
+
+        // Litres: monthly total
+        const byL = {};
+        logs.forEach(l => { const k = l.date.slice(0,7); byL[k] = (byL[k]||0)+l.litres; });
+        const lKeys = Object.keys(byL).sort();
+        charts.litres.data.labels = lKeys;
+        charts.litres.data.datasets[0].data = lKeys.map(k => byL[k]);
+        charts.litres.update();
+
+        // Locations: total spend per location
+        const byLoc = {};
+        logs.forEach(l => { const k = l.location || 'Unspecified'; byLoc[k] = (byLoc[k]||0)+l.sale_price; });
+        const locKeys = Object.keys(byLoc);
+        charts.locations.data.labels = locKeys;
+        charts.locations.data.datasets[0].data = locKeys.map(k => byLoc[k]);
+        charts.locations.update();
     }
 
     function baseOpts(yLabel) {
@@ -193,12 +254,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const logs = getFiltered();
         $('noData').classList.toggle('d-none', logs.length > 0);
         renderSummary(logs);
-        // Destroy existing charts before redraw
-        document.querySelectorAll('canvas').forEach(c => {
-            const ch = Chart.getChart(c);
-            if (ch) ch.destroy();
-        });
-        if (logs.length) renderCharts(logs);
+        if (logs.length) updateCharts(logs);
     }
 
     function bindFilters() {
