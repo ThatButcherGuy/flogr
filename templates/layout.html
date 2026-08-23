@@ -11,8 +11,8 @@
     <!-- DataTables CSS -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.4/css/dataTables.bootstrap4.min.css">
 
-    <!-- Custom CSS -->
-    <link href="/static/styles.css" rel="stylesheet">
+    <!-- Custom CSS (cache-busting with version) -->
+    <link href="/static/styles.css?v={{ CACHEBUST }}" rel="stylesheet">
 
     <!-- Favicon -->
     <link rel="icon" href="/static/favicon.ico" sizes="any">
@@ -44,6 +44,7 @@
                     <ul class="navbar-nav me-auto mt-2">
                         <li class="nav-item"><a class="nav-link" href="/view_log">View Log</a></li>
                         <li class="nav-item"><a class="nav-link" href="/stats">Stats</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
                         <li class="nav-item"><a class="nav-link" href="/garage">Garage</a></li>
                         <li class="nav-item"><a class="nav-link" href="/locations">Locations</a></li>
                         <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
@@ -95,6 +96,9 @@
     <!-- DataTables JS -->
     <script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.11.4/js/dataTables.bootstrap4.min.js"></script>
+
+    <!-- Chart.js (interactive charts for Reports); SRI hash computed for this exact version -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"></script>
 
     <script>
         // Theme control with three modes: auto (follow system), light, dark.

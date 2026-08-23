@@ -294,15 +294,25 @@ The View Log page contains two calculated fields:
 
 ### Stats
 
-The Stats page contains read only statistics generated from the users logs.
+The Stats page contains read-only statistics generated from the user's logs, presented as summary cards plus tables.
 
-There are three tables on the Stats page.
+The **Last Fill** card block summarises the most recent log entry (date, days since, economy, price, cost, location).
 
-The Vehicles table lists the vehicles in your Garage where the user can dive into more specific statistics for the vehicle.
+The **Global Stats** table summarises all logs made by the user across all vehicles in their Garage (total spend, litres, distance, averages, and combined L/100km).
 
-The Last Log table briefly summarises the last log made by the user.
+The **Vehicles** table lists the vehicles in your Garage where the user can dive into more detailed statistics per vehicle.
 
-The Global Stats table briefly summarises all logs made by the user across all vehicles in their Garage.
+### Reports
+
+The **Reports** page (linked in the navbar, and via "Open Reports &amp; Charts" on the Stats page) provides **interactive, graphical** analysis of your logs using Chart.js:
+
+- **Filters** — by vehicle, location, and a from/to date range. Charts and summary cards update instantly (client-side).
+- **Fuel economy (L/100km)** and **price-per-litre** over time (line charts)
+- **Litres purchased** over time (bar chart)
+- **Spend by location** (doughnut chart)
+- **Summary cards** — total spend, litres, distance, average economy, average price
+
+Data is served from the `/api/stats` JSON endpoint.
 
 #### Vehicle Stats
 

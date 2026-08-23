@@ -24,6 +24,25 @@ except Exception:  # pragma: no cover - OIDC client optional at import time
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "default_secret_key")
 
+
+# Read the app version from VERSION file for cache-busting static assets.
+def _read_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
+            return f.read().strip()
+    except Exception:
+        return "dev"
+
+
+CACHEBUST = _read_version()
+
+
+@app.context_processor
+def _inject_globals():
+    """Make CACHEBUST (and version) available to all templates."""
+    return dict(CACHEBUST=CACHEBUST)
+
+
 # Session config
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
@@ -898,13 +917,20 @@ def stats():
         total_kilometres = global_stats[0]["total_kilometres"] if global_stats[0]["total_kilometres"] else 0.0
 
         # Calculate GLobal Litres per 100km
-        combined_litres_per_100km = (total_litres / total_kilometres) * 100
+        combined_litres_per_100km = (total_litres / total_kilometres) * 100 if total_kilometres else 0.0
+
+        # Total fill-up count (global, for this user)
+        fill_count_result = db.execute(
+            "SELECT COUNT(*) AS n FROM log WHERE user_id = ?", user_id)
+        fill_count = fill_count_result[0]["n"] if fill_count_result else 0
 
         return render_template("stats.html",
                                vehicles=vehicles,
                                last_log=last_log,
                                username=username,
                                days_since_last_fill=days_since_last_fill,
+                               days_since=days_since_last_fill,
+                               fill_count=fill_count,
                                total_sale_price=total_sale_price,
                                avg_price_per_litre=avg_price_per_litre,
                                total_litres=total_litres,
@@ -1054,6 +1080,87 @@ def export_log():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment;filename=log_export.csv"}
     )
+
+@app.route("/api/stats")
+@login_required
+def api_stats():
+    """JSON API for the interactive Reports page.
+
+    Returns all the user's log entries (with resolved location), plus the
+    per-vehicle list and all locations, so the browser can filter and render
+    charts without a page reload.
+    """
+    user_id = session["user_id"]
+
+    logs = db.execute("""
+        SELECT
+            log.id,
+            log.date,
+            log.registration,
+            log.fuel_code,
+            log.receipt_number,
+            log.purchased_at,
+            log.litres,
+            log.price_per_litre,
+            log.sale_price,
+            log.kilometres,
+            log.comments,
+            log.location_id,
+            vehicles.make,
+            vehicles.model,
+            locations.retailer AS loc_retailer,
+            locations.suburb   AS loc_suburb
+        FROM log
+        LEFT JOIN vehicles ON vehicles.registration = log.registration AND vehicles.user_id = log.user_id
+        LEFT JOIN locations ON locations.id = log.location_id
+        WHERE log.user_id = ?
+        ORDER BY log.date ASC
+    """, user_id)
+
+    payload = []
+    for l in logs:
+        lpk = (l["litres"] / l["kilometres"] * 100) if l["kilometres"] else 0
+        loc = None
+        if l.get("loc_retailer"):
+            loc = f"{l['loc_retailer']} {l['loc_suburb']}".strip()
+        payload.append({
+            "id": l["id"],
+            "date": l["date"],
+            "registration": l["registration"],
+            "vehicle": f"{l['make']} {l['model']}".strip() if l.get("make") else l["registration"],
+            "fuel": l["fuel_code"],
+            "litres": float(l["litres"] or 0),
+            "price_per_litre": float(l["price_per_litre"] or 0),
+            "sale_price": float(l["sale_price"] or 0),
+            "kilometres": int(l["kilometres"] or 0),
+            "litres_per_100km": round(lpk, 2),
+            "location": loc,
+            "location_id": l["location_id"],
+        })
+
+    # Vehicles + locations for the filter dropdowns
+    vehicles = db.execute(
+        "SELECT registration, make, model FROM vehicles WHERE user_id = ? ORDER BY registration",
+        user_id)
+    locations = db.execute(
+        "SELECT id, retailer, suburb FROM locations WHERE user_id = ? ORDER BY retailer, suburb", user_id)
+
+    return jsonify({
+        "logs": payload,
+        "vehicles": [dict(v) for v in vehicles],
+        "locations": [
+            {"id": l["id"], "label": f"{l['retailer']} {l['suburb']}".strip()}
+            for l in locations
+        ],
+    })
+
+
+@app.route("/reports")
+@login_required
+def reports():
+    """Interactive Reports page (charts). Data is fetched client-side from /api/stats."""
+    return render_template("reports.html")
+
 
 @app.route("/garage")
 @login_required

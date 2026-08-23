@@ -1,0 +1,211 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Reports
+{% endblock %}
+
+{% block main %}
+<div class="container text-start">
+    <div class="card mb-4">
+        <div class="card-header text-center">
+            <h2 class="mb-0">Reports &amp; Charts</h2>
+        </div>
+        <div class="card-body">
+            <!-- Filters -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <label class="form-label">Vehicle</label>
+                    <select id="filterVehicle" class="form-select">
+                        <option value="">All vehicles</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Location</label>
+                    <select id="filterLocation" class="form-select">
+                        <option value="">All locations</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">From</label>
+                    <input type="date" id="filterFrom" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">To</label>
+                    <input type="date" id="filterTo" class="form-control">
+                </div>
+            </div>
+
+            <!-- Summary cards -->
+            <div class="row g-3 mb-4" id="summaryRow"></div>
+
+            <!-- Charts -->
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Fuel Economy (L/100km) over time</h6>
+                        <canvas id="chartEconomy" height="220"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Price per Litre over time</h6>
+                        <canvas id="chartPrice" height="220"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Litres purchased over time</h6>
+                        <canvas id="chartLitres" height="220"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Spend by location</h6>
+                        <canvas id="chartLocations" height="220"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="noData" class="alert alert-info mt-4 d-none">No data matches the selected filters.</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let allLogs = [];
+    const $ = (id) => document.getElementById(id);
+
+    // ---- Fetch data ----
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+            allLogs = data.logs || [];
+            populateFilterOptions(data);
+            bindFilters();
+            render();
+        })
+        .catch(err => { console.error('Failed to load stats:', err); });
+
+    function populateFilterOptions(data) {
+        const vehSel = $('filterVehicle'), locSel = $('filterLocation');
+        data.vehicles.forEach(v => {
+            const o = document.createElement('option');
+            o.value = v.registration;
+            o.textContent = (v.make + ' ' + v.model).trim() + ' (' + v.registration + ')';
+            vehSel.appendChild(o);
+        });
+        data.locations.forEach(l => {
+            const o = document.createElement('option');
+            o.value = l.id;
+            o.textContent = l.label;
+            locSel.appendChild(o);
+        });
+    }
+
+    function getFiltered() {
+        const veh = $('filterVehicle').value;
+        const loc = $('filterLocation').value;
+        const from = $('filterFrom').value;
+        const to = $('filterTo').value;
+        return allLogs.filter(l => {
+            if (veh && l.registration !== veh) return false;
+            if (loc && String(l.location_id) !== loc) return false;
+            if (from && l.date < from) return false;
+            if (to && l.date > to) return false;
+            return true;
+        });
+    }
+
+    function renderSummary(logs) {
+        const el = $('summaryRow');
+        if (!logs.length) { el.innerHTML = ''; return; }
+        const totalSpend = logs.reduce((s, l) => s + l.sale_price, 0);
+        const totalLitres = logs.reduce((s, l) => s + l.litres, 0);
+        const totalKm = logs.reduce((s, l) => s + l.kilometres, 0);
+        const avgLpk = totalKm ? (totalLitres / totalKm * 100) : 0;
+        const avgPrice = totalLitres ? (totalSpend / totalLitres) : 0;
+        const tankCount = logs.length;
+        const cards = [
+            ['Tank fill-ups', tankCount],
+            ['Total spend', '$' + totalSpend.toFixed(2)],
+            ['Total litres', totalLitres.toFixed(1) + ' L'],
+            ['Total km', totalKm.toLocaleString() + ' km'],
+            ['Avg economy', avgLpk.toFixed(2) + ' L/100km'],
+            ['Avg price/L', '$' + avgPrice.toFixed(3)],
+        ];
+        el.innerHTML = cards.map(([label, val]) =>
+            `<div class="col-md-2 col-6"><div class="card stat-card h-100">
+               <div class="stat-value">${val}</div>
+               <div class="stat-label">${label}</div></div></div>`).join('');
+    }
+
+    function renderCharts(logs) {
+        const dates = logs.map(l => l.date);
+        const economy = logs.map(l => l.litres_per_100km);
+        const prices = logs.map(l => l.price_per_litre);
+        const litres = logs.map(l => l.litres);
+
+        // Fuel economy line
+        new Chart($('chartEconomy'), {
+            type: 'line',
+            data: { labels: dates, datasets: [{ label: 'L/100km', data: economy, borderColor: '#0D3BE7', backgroundColor: 'rgba(13,59,231,0.1)', fill: true, tension: 0.2 }] },
+            options: baseOpts('L/100km')
+        });
+        // Price line
+        new Chart($('chartPrice'), {
+            type: 'line',
+            data: { labels: dates, datasets: [{ label: 'Price/L', data: prices, borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,0.12)', fill: true, tension: 0.2 }] },
+            options: baseOpts('$ / litre')
+        });
+        // Litres bar
+        new Chart($('chartLitres'), {
+            type: 'bar',
+            data: { labels: dates, datasets: [{ label: 'Litres', data: litres, backgroundColor: 'rgba(13,59,231,0.55)' }] },
+            options: baseOpts('Litres')
+        });
+        // Spend by location doughnut
+        const byLoc = {};
+        logs.forEach(l => {
+            const key = l.location || 'Unspecified';
+            byLoc[key] = (byLoc[key] || 0) + l.sale_price;
+        });
+        const locLabels = Object.keys(byLoc), locVals = Object.values(byLoc);
+        new Chart($('chartLocations'), {
+            type: 'pie',
+            data: { labels: locLabels, datasets: [{ data: locVals, backgroundColor: ['#0D3BE7','#F4E24A','#1f9d55','#DC2229','#3eef16','#a85ad1'] }] },
+            options: { responsive: true, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function baseOpts(yLabel) {
+        return {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: false, title: { display: true, text: yLabel } } }
+        };
+    }
+
+    function render() {
+        const logs = getFiltered();
+        $('noData').classList.toggle('d-none', logs.length > 0);
+        renderSummary(logs);
+        // Destroy existing charts before redraw
+        document.querySelectorAll('canvas').forEach(c => {
+            const ch = Chart.getChart(c);
+            if (ch) ch.destroy();
+        });
+        if (logs.length) renderCharts(logs);
+    }
+
+    function bindFilters() {
+        ['filterVehicle','filterLocation','filterFrom','filterTo'].forEach(id => {
+            $(id).addEventListener('change', render);
+        });
+    }
+});
+</script>
+{% endblock %}
