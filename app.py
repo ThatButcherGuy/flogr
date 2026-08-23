@@ -898,36 +898,85 @@ def stats():
         last_fill_date = datetime.strptime(last_log['date'], "%Y-%m-%d").date()
         days_since_last_fill = (date.today() - last_fill_date).days
 
-        # Calculate global stats
-        global_stats = db.execute("""
+        # ---- Filters (date range + vehicle) from query params ----
+        start_date_str = request.args.get('start_date', '')
+        end_date_str = request.args.get('end_date', '')
+        reg_filter = request.args.get('registration', '')
+
+        where = "user_id = ?"
+        params = [user_id]
+        if reg_filter:
+            where += " AND registration = ?"
+            params.append(reg_filter)
+
+        # Validate/clamp dates. If invalid, ignore them (use all-time).
+        try:
+            if start_date_str:
+                datetime.strptime(start_date_str, '%Y-%m-%d')
+            if end_date_str:
+                datetime.strptime(end_date_str, '%Y-%m-%d')
+        except ValueError:
+            start_date_str = ''
+            end_date_str = ''
+        if start_date_str:
+            where += " AND date >= ?"
+            params.append(start_date_str)
+        if end_date_str:
+            where += " AND date <= ?"
+            params.append(end_date_str)
+
+        # Determine the effective date range for the UI (min/max in filtered set)
+        range_res = db.execute(
+            f"SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM log WHERE {where}",
+            *params)
+
+        # Calculate global stats (filtered)
+        global_stats = db.execute(f"""
             SELECT
                 SUM(sale_price) AS total_sale_price,
                 AVG(price_per_litre) AS avg_price_per_litre,
                 SUM(litres) AS total_litres,
                 AVG(kilometres) AS avg_kilometres,
-                SUM(kilometres) AS total_kilometres
+                SUM(kilometres) AS total_kilometres,
+                COUNT(*) AS fill_count
             FROM log
-            WHERE user_id = ?
-            """, user_id)
+            WHERE {where}
+            """, *params)
 
         total_sale_price = global_stats[0]["total_sale_price"] if global_stats[0]["total_sale_price"] else 0.0
         avg_price_per_litre = global_stats[0]["avg_price_per_litre"] if global_stats[0]["avg_price_per_litre"] else 0.0
         total_litres = global_stats[0]["total_litres"] if global_stats[0]["total_litres"] else 0.0
         avg_kilometres = global_stats[0]["avg_kilometres"] if global_stats[0]["avg_kilometres"] else 0.0
         total_kilometres = global_stats[0]["total_kilometres"] if global_stats[0]["total_kilometres"] else 0.0
+        fill_count = global_stats[0]["fill_count"] if global_stats[0]["fill_count"] else 0
+
+        # Additional useful stats (filtered): cost per 100km, best/worst economy
+        cost_per_100km = (total_sale_price / total_kilometres * 100) if total_kilometres else 0.0
+        avg_cost_per_tank = (total_sale_price / fill_count) if fill_count else 0.0
+
+        # Economy extremes from the filtered set
+        econ_res = db.execute(f"""
+            SELECT
+                MAX(litres / kilometres * 100) AS best_lpk,
+                MIN(litres / kilometres * 100) AS worst_lpk
+            FROM log
+            WHERE {where} AND kilometres > 0
+            """, *params)
+        best_lpk = econ_res[0]["best_lpk"] if econ_res[0]["best_lpk"] else 0.0
+        worst_lpk = econ_res[0]["worst_lpk"] if econ_res[0]["worst_lpk"] else 0.0
 
         # Calculate GLobal Litres per 100km
         combined_litres_per_100km = (total_litres / total_kilometres) * 100 if total_kilometres else 0.0
-
-        # Total fill-up count (global, for this user)
-        fill_count_result = db.execute(
-            "SELECT COUNT(*) AS n FROM log WHERE user_id = ?", user_id)
-        fill_count = fill_count_result[0]["n"] if fill_count_result else 0
 
         return render_template("stats.html",
                                vehicles=vehicles,
                                last_log=last_log,
                                username=username,
+                               reg_filter=reg_filter,
+                               start_date=start_date_str,
+                               end_date=end_date_str,
+                               min_date=range_res[0]["min_d"] if range_res and range_res[0]["min_d"] else date.today().isoformat(),
+                               max_date=range_res[0]["max_d"] if range_res and range_res[0]["max_d"] else date.today().isoformat(),
                                days_since_last_fill=days_since_last_fill,
                                days_since=days_since_last_fill,
                                fill_count=fill_count,
@@ -936,7 +985,11 @@ def stats():
                                total_litres=total_litres,
                                avg_kilometres=avg_kilometres,
                                total_kilometres=total_kilometres,
-                               combined_litres_per_100km=combined_litres_per_100km)
+                               combined_litres_per_100km=combined_litres_per_100km,
+                               cost_per_100km=cost_per_100km,
+                               avg_cost_per_tank=avg_cost_per_tank,
+                               best_lpk=best_lpk,
+                               worst_lpk=worst_lpk)
 
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
@@ -1005,7 +1058,8 @@ def vehicle_stats(registration):
                 AVG(price_per_litre) AS vehicle_avg_price_per_litre,
                 SUM(litres) AS vehicle_total_litres,
                 AVG(kilometres) AS vehicle_avg_kilometres,
-                SUM(kilometres) AS vehicle_total_kilometres
+                SUM(kilometres) AS vehicle_total_kilometres,
+                COUNT(*) AS vehicle_tank_count
             FROM log
             WHERE user_id = ?
             AND registration = ?
@@ -1020,7 +1074,25 @@ def vehicle_stats(registration):
         vehicle_total_kilometres = vehicle_stats[0]["vehicle_total_kilometres"] if vehicle_stats[0]["vehicle_total_kilometres"] else 0.0
 
         # Calculate litres per hundred
-        mileage = (vehicle_total_litres / vehicle_total_kilometres) * 100
+        # Calculate litres per hundred
+        mileage = (vehicle_total_litres / vehicle_total_kilometres) * 100 if vehicle_total_kilometres else 0.0
+
+        # Extra vehicle stats
+        vehicle_cost_per_100km = (vehicle_total_sale_price / vehicle_total_kilometres * 100) if vehicle_total_kilometres else 0.0
+        vehicle_tank_count = vehicle_stats[0].get("vehicle_tank_count") or 0
+        vehicle_avg_cost_per_tank = (vehicle_total_sale_price / vehicle_tank_count) if vehicle_tank_count else 0.0
+
+        # Economy extremes for this vehicle in the date range
+        econ_res = db.execute("""
+            SELECT
+                MAX(litres / kilometres * 100) AS best,
+                MIN(litres / kilometres * 100) AS worst
+            FROM log
+            WHERE user_id = ? AND registration = ? AND kilometres > 0
+              AND date >= ? AND date <= ?
+            """, user_id, registration, start_date.date(), end_date.date())
+        vehicle_best_lpk = econ_res[0]["best"] if econ_res[0]["best"] else 0.0
+        vehicle_worst_lpk = econ_res[0]["worst"] if econ_res[0]["worst"] else 0.0
 
         return render_template("vehicle_stats.html", vehicle=vehicle[0],
                                vehicle_total_sale_price=vehicle_total_sale_price,
@@ -1028,6 +1100,11 @@ def vehicle_stats(registration):
                                vehicle_total_litres=vehicle_total_litres,
                                vehicle_avg_kilometres=vehicle_avg_kilometres,
                                vehicle_total_kilometres=vehicle_total_kilometres,
+                               vehicle_cost_per_100km=vehicle_cost_per_100km,
+                               vehicle_tank_count=vehicle_tank_count,
+                               vehicle_avg_cost_per_tank=vehicle_avg_cost_per_tank,
+                               vehicle_best_lpk=vehicle_best_lpk,
+                               vehicle_worst_lpk=vehicle_worst_lpk,
                                mileage=mileage,
                                start_date=start_date_str, end_date=end_date_str,
                                vehicle_log=vehicle_log)

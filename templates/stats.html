@@ -6,9 +6,40 @@ Statistics
 
 {% block main %}
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h2 class="mb-0">Statistics for {{ username }}</h2>
         <a href="{{ url_for('reports') }}" class="btn btn-outline-primary">Open Reports &amp; Charts</a>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" action="{{ url_for('stats') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label" for="f_reg">Vehicle</label>
+                    <select id="f_reg" name="registration" class="form-select">
+                        <option value="">All vehicles</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.registration }}" {% if v.registration == reg_filter %}selected{% endif %}>
+                            {{ v.registration }} — {{ v.make }} {{ v.model }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="f_from">From</label>
+                    <input type="date" id="f_from" name="start_date" class="form-control" value="{{ start_date }}" max="{{ max_date }}" min="{{ min_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="f_to">To</label>
+                    <input type="date" id="f_to" name="end_date" class="form-control" value="{{ end_date }}" max="{{ max_date }}" min="{{ min_date }}">
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">Apply Filter</button>
+                    <a href="{{ url_for('stats') }}" class="btn btn-outline-secondary w-100 mt-2">Reset</a>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Global stat cards -->
@@ -35,6 +66,30 @@ Statistics
             <div class="card stat-card h-100">
                 <div class="stat-value">{{ "{:,.2f}".format(combined_litres_per_100km) }}</div>
                 <div class="stat-label">L/100km (combined)</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">${{ "{:,.2f}".format(cost_per_100km) }}</div>
+                <div class="stat-label">Cost per 100 km</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">${{ "{:,.2f}".format(avg_cost_per_tank) }}</div>
+                <div class="stat-label">Avg cost / tank</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{{ "{:,.2f}".format(best_lpk) }}</div>
+                <div class="stat-label">Best L/100km</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{{ "{:,.2f}".format(worst_lpk) }}</div>
+                <div class="stat-label">Worst L/100km</div>
             </div>
         </div>
     </div>
