@@ -112,6 +112,17 @@ document.querySelectorAll('.edit-location-btn').forEach(function(btn) {
         document.getElementById('editRetailer').value = this.dataset.retailer;
         document.getElementById('editSuburb').value = this.dataset.suburb;
         document.getElementById('editLocationForm').action = '/locations/' + id + '/edit';
+        // Open the Bootstrap modal (compatible with Bootstrap 5.0.x/5.x shipped
+        // in layout.html — Modal.getInstance is the stable API; getOrCreateInstance
+        // only exists in 5.2+, so fall back to a fresh instance)
+        var modalEl = document.getElementById('editLocationModal');
+        if (window.bootstrap && bootstrap.Modal) {
+            var modal = bootstrap.Modal.getInstance(modalEl);
+            if (!modal) {
+                modal = new bootstrap.Modal(modalEl);
+            }
+            modal.show();
+        }
     });
 });
 </script>
