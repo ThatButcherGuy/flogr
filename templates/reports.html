@@ -43,43 +43,43 @@ Reports
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Fuel Economy (L/100km) over time</h6>
-                        <canvas id="chartEconomy" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartEconomy"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Price per Litre over time</h6>
-                        <canvas id="chartPrice" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartPrice"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Litres purchased over time</h6>
-                        <canvas id="chartLitres" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartLitres"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
-                        <h6 class="stat-label mb-2">Spend by location</h6>
-                        <canvas id="chartLocations" height="220"></canvas>
+                        <h6 class="stat-label mb-2">Spend by retailer</h6>
+                        <div style="position:relative;height:240px;"><canvas id="chartLocations"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Fuel price history (avg $/L by year)</h6>
-                        <canvas id="chartPriceYear" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartPriceYear"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Monthly spend (last 12 months)</h6>
-                        <canvas id="chartMonthlySpend" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartMonthlySpend"></canvas></div>
                     </div>
                 </div>
                 <div class="col-lg-6">
                     <div class="card stat-card h-100">
                         <h6 class="stat-label mb-2">Vehicle comparison (economy + cost/100km)</h6>
-                        <canvas id="chartPerVehicle" height="220"></canvas>
+                        <div style="position:relative;height:240px;"><canvas id="chartPerVehicle"></canvas></div>
                     </div>
                 </div>
             </div>
@@ -273,12 +273,15 @@ document.addEventListener('DOMContentLoaded', function () {
         charts.litres.data.datasets[0].data = lKeys.map(k => byL[k]);
         charts.litres.update();
 
-        // Locations: total spend per location
-                const byLoc = {};
-                logs.forEach(l => { const k = l.location || 'Unspecified'; byLoc[k] = (byLoc[k]||0)+l.sale_price; });
-                const locKeys = Object.keys(byLoc);
-                charts.locations.data.labels = locKeys;
-                charts.locations.data.datasets[0].data = locKeys.map(k => byLoc[k]);
+        // Locations: total spend grouped by RETAILER only
+                const byR = {};
+                logs.forEach(l => {
+                    const r = l.retailer || 'Unspecified';
+                    byR[r] = (byR[r]||0) + l.sale_price;
+                });
+                const rKeys = Object.keys(byR).sort((a,b)=> (byR[b]-byR[a]));
+                charts.locations.data.labels = rKeys;
+                charts.locations.data.datasets[0].data = rKeys.map(k => byR[k]);
                 charts.locations.update();
 
                 // Yearly avg price history
