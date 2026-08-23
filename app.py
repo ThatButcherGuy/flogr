@@ -98,17 +98,8 @@ tables = db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 )
 
-for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oidc_enabled"]:
-    try:
-        db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
-    except Exception:
-        pass
-
-# Set oidc_enabled default for existing users who have it NULL
-# Default to enabled so existing users get the OIDC option
-db.execute(
-    "UPDATE users SET oidc_enabled = 1 WHERE oidc_enabled IS NULL"
-)
+# Initialize empty database from schema BEFORE running any migrations so
+# the users table exists for the ALTER/UPDATE statements below.
 if not tables:
     print("Database is empty — initializing from schema.sql")
     if not os.path.exists(SCHEMA_PATH):
@@ -126,6 +117,18 @@ if not tables:
     except sqlite3.Error as e:
         print(f"Error initializing database: {e}")
         exit(1)
+
+for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oidc_enabled"]:
+    try:
+        db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+    except Exception:
+        pass
+
+# Set oidc_enabled default for existing users who have it NULL
+# Default to enabled so existing users get the OIDC option
+db.execute(
+    "UPDATE users SET oidc_enabled = 1 WHERE oidc_enabled IS NULL"
+)
 
 # -------------------------
 # Debug: verify tables
