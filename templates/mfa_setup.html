@@ -1,43 +1,52 @@
 {% extends "layout.html" %}
 {% block title %}Enable two-factor authentication{% endblock %}
 {% block main %}
-<h1>Enable two-factor authentication</h1>
+<div class="auth-card">
+    <div class="card">
+        <div class="card-header text-center">
+            <h3 class="mb-0">Enable two-factor authentication</h3>
+        </div>
+        <div class="card-body">
 {% if recovery_codes %}
-  <div class="alert alert-success">
-    Two-factor authentication enabled. Save these recovery codes in a safe place.
-    Each can be used once.
-  </div>
-  <div class="card mx-auto" style="max-width:400px">
-    <div class="card-body">
-      <ul class="list-group">
-        {% for code in recovery_codes %}
-        <li class="list-group-item text-monospace">{{ code }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </div>
-  <br>
-  <a href="{{ url_for('account') }}" class="btn btn-primary">Back to Account Security</a>
+            <div class="alert alert-success">
+                Two-factor authentication enabled. Save these recovery codes in a safe place.
+                Each can be used once.
+            </div>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        {% for code in recovery_codes %}
+                        <li class="list-group-item text-monospace">{{ code }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            <a href="{{ url_for('account') }}" class="btn btn-primary w-100">Back to Account Security</a>
 {% else %}
-<p>Scan this QR code in your authenticator app, or manually enter the secret key below.</p>
+            <p class="text-muted mb-3">Scan this QR code in your authenticator app, or manually enter the secret key below.</p>
 
-<div class="text-center mb-3">
-  {% if provisioning_uri %}
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ provisioning_uri | urlencode }}" alt="TOTP QR Code" class="img-fluid" style="max-width:220px" />
-  {% endif %}
-</div>
+            <div class="text-center mb-3">
+                {% if provisioning_uri %}
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ provisioning_uri | urlencode }}"
+                     alt="TOTP QR Code" class="img-fluid" style="max-width:220px" />
+                {% endif %}
+            </div>
 
-<div class="card mx-auto mb-3" style="max-width:400px">
-  <div class="card-body">
-    <p class="mb-1"><strong>Secret key:</strong></p>
-    <p class="text-monospace text-center mb-0" style="word-break:break-all; font-size:1.1rem; letter-spacing:0.1em">{{ secret }}</p>
-  </div>
-</div>
+            <div class="mb-3">
+                <p class="mb-1"><strong>Secret key:</strong></p>
+                <p class="text-monospace text-center mb-0" style="word-break:break-all; font-size:1.1rem; letter-spacing:0.1em">{{ secret }}</p>
+            </div>
 
-<form method="post">
-  <input type="hidden" name="secret" value="{{ secret }}" />
-  <div class="mb-3"><label>Verification code</label><input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" /></div>
-  <button class="btn btn-primary" type="submit">Verify</button>
-</form>
+            <form method="post">
+                <input type="hidden" name="secret" value="{{ secret }}" />
+                <div class="mb-3">
+                    <label class="form-label">Verification code</label>
+                    <input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" required>
+                </div>
+                <button class="btn btn-primary w-100" type="submit">Verify</button>
+            </form>
 {% endif %}
+        </div>
+    </div>
+</div>
 {% endblock %}

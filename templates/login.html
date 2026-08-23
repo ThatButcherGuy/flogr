@@ -5,28 +5,40 @@
 {% endblock %}
 
 {% block main %}
-<h2>Login</h2><br>
-<form id="login" action="/login" method="post">
-    <div class="mb-3">
-        <label for="username" class="form-label">Username</label>
-        <input id="username" autocomplete="off" autofocus class="form-control mx-auto w-auto lowercase" name="username" placeholder="Enter your username" type="text" oninput="forceLowerCase(this)" required>
+<div class="auth-card">
+    <div class="card">
+        <div class="card-header text-center">
+            <h3 class="mb-0">fLOGr</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-center text-muted mb-4">Log in to record your fuel logs</p>
+            <form id="login" action="/login" method="post">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username</label>
+                    <input id="username" autocomplete="off" autofocus class="form-control lowercase" name="username" placeholder="Enter your username" type="text" oninput="forceLowerCase(this)" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input id="password" autocomplete="off" class="form-control" name="password" placeholder="Enter your password" type="password" required>
+                </div>
+                <button class="btn btn-primary w-100" type="submit">Log In</button>
+            </form>
+
+            {% if oidc_enabled %}
+            <hr class="my-4">
+            <form action="/login/oidc" method="get">
+                <button type="submit" class="btn btn-outline-secondary w-100">Log in with Authentik</button>
+            </form>
+            {% endif %}
+
+            <hr class="my-4">
+            <p class="text-center text-muted mb-2">Don't have an account?</p>
+            <form action="/register" method="get">
+                <button class="btn btn-outline-primary w-100" type="submit">Register</button>
+            </form>
+        </div>
     </div>
-    <div class="mb-3">
-        <label for="password" class="form-label">Password</label>
-        <input id="password" autocomplete="off" class="form-control mx-auto w-auto" name="password" placeholder="Enter your password" type="password" required>
-    </div>
-    <button class="btn btn-primary" type="submit">Log In</button>
-</form>
-{% if oidc_enabled %}
-<br>or<br>
-<form action="/login/oidc" method="get">
-    <button type="submit" class="btn btn-outline-secondary">Log in with Authentik</button>
-</form>
-<br>or<br>
-{% endif %}
-<form action="/register" method="get">
-    <button class="btn btn-primary" type="submit">Register</button>
-</form>
+</div>
 {% endblock %}
 
 {% block script %}

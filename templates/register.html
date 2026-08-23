@@ -5,24 +5,38 @@ Register
 {% endblock %}
 
 {% block main %}
-<h2>Register for fLOGr</h2><br>
-<form id="register" action="/register" method="post">
-    <div class="mb-3">
-        <input autocomplete="off" autofocus class="form-control mx-auto w-auto lowercase" name="username" placeholder="Username"
-            type="text" oninput="forceLowerCase(this)">
+<div class="auth-card">
+    <div class="card">
+        <div class="card-header text-center">
+            <h3 class="mb-0">Create an account</h3>
+        </div>
+        <div class="card-body">
+            <form id="register" action="/register" method="post">
+                <div class="mb-3">
+                    <label for="reg-username" class="form-label">Username</label>
+                    <input id="reg-username" autocomplete="off" autofocus class="form-control lowercase" name="username"
+                        placeholder="Username" type="text" oninput="forceLowerCase(this)" required>
+                </div>
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email</label>
+                    <input autocomplete="off" class="form-control" id="email" name="email" placeholder="Email" type="email" required>
+                </div>
+                <div class="mb-3">
+                    <label for="reg-password" class="form-label">Password</label>
+                    <input class="form-control" id="reg-password" name="password" placeholder="Password" type="password" required>
+                </div>
+                <div class="mb-3">
+                    <label for="reg-confirm" class="form-label">Re-type Password</label>
+                    <input class="form-control" id="reg-confirm" name="confirmation" placeholder="Re-Type Password" type="password" required>
+                </div>
+                <button class="btn btn-primary w-100" type="submit">Register</button>
+            </form>
+            <hr class="my-4">
+            <p class="text-center text-muted mb-2">Already have an account?</p>
+            <a class="btn btn-outline-primary w-100" href="/login">Log In</a>
+        </div>
     </div>
-        <div class="mb-3">
-        <input autocomplete="off" class="form-control mx-auto w-auto" id="email" name="email" placeholder="Email"
-            type="email">
-    </div>
-    <div class="mb-3">
-        <input class="form-control mx-auto w-auto" name="password" placeholder="Password" type="password">
-    </div>
-    <div class="mb-3">
-        <input class="form-control mx-auto w-auto" name="confirmation" placeholder="Re-Type Password" type="password">
-    </div>
-    <button class="btn btn-primary" type="submit">Register</button>
-</form>
+</div>
 {% endblock %}
 
 {% block script %}

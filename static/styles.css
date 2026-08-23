@@ -1,62 +1,197 @@
-/* Size and colour for brand */
-nav .navbar-brand
-{
-    font-size: xx-large;
-    color: #3eef16;
+/* ==========================================================================
+   fLOGr — UI overhaul
+   Light + dark theming via Bootstrap 5.3 data-bs-theme (set on <html>).
+   Brand palette: navy #08296B, blue #0D3BE7, yellow #F4E24A, red #DC2229.
+   ========================================================================== */
+
+:root {
+    /* fLOGr brand accents (used in both themes) */
+    --fl-nav: #08296B;
+    --fl-blue: #0D3BE7;
+    --fl-yellow: #F4E24A;
+    --fl-red: #DC2229;
 }
 
-.section {
-    padding-bottom: 1rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
-    padding-top: 0.5rem;
+/* ---- Body & global ---- */
+body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
-.section:hover {
-    background-color: #f5f5f5;
-    transition: color 2s ease-in-out, background-color 0.15s ease-in-out;
+/* The whole app needs breathing room */
+main.container {
+    flex: 1 1 auto;
 }
 
-table {
-    background-color: transparent;
-    margin-bottom: 1rem;
-    vertical-align: middle;
-    margin-left: auto;
-    margin-right: auto;
-    width: 50%;
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
-table th,
-table td {
-    padding: 0.75rem;
-    vertical-align: middle;
+/* ---- Navbar: brand pills, dark-aware ---- */
+nav[data-role="appnav"] {
+    border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-tbody tr:nth-of-type(odd) {
-    background-color: rgb(179, 208, 255, 0.3)
+nav .navbar-brand {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--fl-nav);
 }
 
-.no-wrap {
-    white-space: nowrap;
+[data-bs-theme="dark"] nav .navbar-brand {
+    color: #ffffff;
+}
+
+.navbar-nav .nav-link {
+    font-weight: 500;
+}
+
+.navbar-nav .nav-link.active {
+    color: var(--fl-blue);
+    font-weight: 600;
+}
+
+[data-bs-theme="dark"] .navbar-nav .nav-link.active {
+    color: var(--fl-yellow);
+}
+
+/* ---- Cards: the primary content container ---- */
+.card {
+    border-radius: 0.9rem;
+    border: 1px solid rgba(127, 127, 127, 0.25);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+    font-weight: 600;
+    background-color: rgba(13, 59, 231, 0.06);
+    border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+}
+
+[data-bs-theme="dark"] .card-header {
+    background-color: rgba(244, 226, 74, 0.06);
+}
+
+/* ---- Tables ---- */
+.table {
+    --bs-table-hover-bg: rgba(13, 59, 231, 0.06);
+}
+
+.table thead th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    color: #56607a;
+    border-bottom-width: 2px;
+}
+
+[data-bs-theme="dark"] .table thead th {
+    color: #a9b2c7;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: rgba(179, 208, 255, 0.12);
+}
+
+[data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* ---- Forms: focus on accessibility + brand ---- */
+.form-control, .form-select {
+    border-radius: 0.5rem;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--fl-blue);
+    box-shadow: 0 0 0 0.2rem rgba(13, 59, 231, 0.15);
+}
+
+.btn-primary {
+    background-color: var(--fl-blue);
+    border-color: var(--fl-blue);
+}
+
+.btn-primary:hover, .btn-primary:focus {
+    background-color: #0a2fb8;
+    border-color: #0a2fb8;
+}
+
+.btn-outline-primary {
+    color: var(--fl-blue);
+    border-color: var(--fl-blue);
+}
+
+/* ---- Buttons: subtle rounding ---- */
+.btn {
+    border-radius: 0.5rem;
+}
+
+/* ---- Red asterisk on mandatory form fields (existing class) ---- */
+.form-label.req::after {
+    content: " *";
+    color: var(--fl-red);
+    font-weight: 700;
+}
+
+/* ---- Smaller helper/muted text ---- */
+.text-muted {
+    font-size: 0.85rem;
+}
+
+/* ---- Mirror the pre-existing utility classes ---- */
+.lowercase { text-transform: lowercase; }
+
+.no-wrap { white-space: nowrap; }
+
+.table-class { margin-bottom: 60px; }
+
+/* ---- Dashboard stat highlights (used by stats/vehicle_stats) ---- */
+.stat-card {
+    border-radius: 1rem;
+    background: rgba(13, 59, 231, 0.05);
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    padding: 1.25rem 1rem;
+    text-align: center;
+}
+
+.stat-card .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--fl-nav);
+}
+
+.stat-card .stat-label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #56607a;
+}
+
+[data-bs-theme="dark"] .stat-card .stat-value { color: #ffffff; }
+[data-bs-theme="dark"] .stat-card .stat-label { color: #a9b2c7; }
+
+/* ---- Login/auth pages: centred card polish ---- */
+.auth-card {
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.auth-card .card-body {
+    padding: 2rem;
 }
 
 @media screen and (max-width: 600px) {
-    .section {
-        flex-direction: column;
-    }
+    .section { flex-direction: column; }
 }
 
-.table-class {
-    margin-bottom: 60px;
-}
-
-.lowercase {
-    text-transform: lowercase;
-}
-
-/* Red asterisk to denote mandatory form fields */
-.form-label.req::after {
-    content: " *";
-    color: #dc3545;
-    font-weight: 700;
+/* ---- Footer spacing keeps it off the bottom ---- */
+footer {
+    margin-top: 2rem;
 }
