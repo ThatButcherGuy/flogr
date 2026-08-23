@@ -223,14 +223,15 @@ This field is optional.
 
 Purchased At:
 
-This is the location the fuel was purchased at.
+This is the location the fuel was purchased at, shown as `Retailer Suburb` (e.g. `Costco Majura`).
 
-It is recommended the user uses the auto-complete function for purchases made at the same location. This will log clean data that can be used to generate accurate reports in future versions.
+Locations are managed in a **user-editable location database** (see the *Locations* page). Choose an existing location from the dropdown, or add a new one inline without losing the rest of the form. Storing each purchase as a reusable location keeps data consistent (one value per store) and enables per-location statistics in future versions.
 
 This field is optional.
 
 - Requirements
-  - `VARCHAR(50)`
+  - `retailer VARCHAR(100)` + `suburb VARCHAR(100)` in the `locations` table
+  - `log.location_id` references the chosen `locations.id`
 
 Litres:
 
@@ -335,12 +336,13 @@ The Vehicle Details page can be accessed by clicking on the Registration of the 
 
 ### SQLite3 Database Structure
 
-The SQLite3 Database contains four tables:
+The SQLite3 Database contains five tables:
 
 - `users`
 - `fuel_types`
 - `vehicles`
 - `log`
+- `locations`
 
 `users`:
 
@@ -365,6 +367,12 @@ This table contains the details of each vehicle in the users garage. the `odomet
 This table is where most data is stored for fLOGr and contains every logged record made on the Enter a Record (Index) page.
 
 Each entry is linked back to a vehicle `registration` and `user_id`.
+
+The `location_id` column references the `locations` table (added in the location-database feature). Displayed location names are resolved from `locations` so renaming a location propagates to existing log entries.
+
+`locations`:
+
+This table stores the user-managed purchase locations as `retailer` + `suburb` (displayed as `Retailer Suburb`, e.g. `Costco Majura`). Each location is owned by a `user_id`. Log rows reference a location via `log.location_id`; deleting a location that is still referenced by log rows is blocked.
 
 ---
 

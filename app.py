@@ -4,7 +4,7 @@ import csv
 import secrets
 
 from cs50 import SQL
-from flask import Flask, flash, redirect, render_template, request, session, url_for, Response
+from flask import Flask, flash, redirect, render_template, request, session, url_for, Response, jsonify
 from flask_session import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 from email_validator import validate_email, EmailNotValidError
@@ -129,6 +129,124 @@ for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oid
 db.execute(
     "UPDATE users SET oidc_enabled = 1 WHERE oidc_enabled IS NULL"
 )
+
+
+# ---------------------------------------------------------------------------
+# Purchased-at location database (user-managed stores + suburbs)
+# ---------------------------------------------------------------------------
+# Creates the `locations` table (if absent), adds `log.location_id`, and
+# backfills existing free-text `purchased_at` rows into the reference list.
+# Best-effort split of free text "Retailer Suburb" -> retailer/suburb on the
+# last space, so "Costco Majura" -> retailer=Costco, suburb=Majura.
+def migrate_locations():
+    # Use a native sqlite3 connection for DDL/introspection (the cs50 SQL
+    # wrapper returns a bool for PRAGMA and can't run CREATE TABLE IF NOT
+    # EXISTS cleanly).
+    raw = sqlite3.connect(DB_PATH)
+
+    # 1) Ensure the locations table exists
+    # Case-insensitive uniqueness is enforced in app queries (SQLite doesn't
+    # allow LOWER() inside a UNIQUE constraint).
+    raw.execute("""
+        CREATE TABLE IF NOT EXISTS locations (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id  INTEGER NOT NULL,
+            retailer VARCHAR(100) NOT NULL,
+            suburb   VARCHAR(100) NOT NULL,
+            UNIQUE (user_id, retailer, suburb),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    # 2) Add log.location_id if missing
+    log_cols = [row[1] for row in raw.execute("PRAGMA table_info(log)")]
+    if "location_id" not in log_cols:
+        raw.execute("ALTER TABLE log ADD COLUMN location_id INTEGER")
+    raw.commit()
+
+    # 3) Backfill: import distinct existing free-text purchased_at values
+    #    (per user) into locations and point existing log rows at them.
+    cols = [row[1] for row in raw.execute("PRAGMA table_info(log)")]
+    if "purchased_at" not in cols:
+        raw.close()
+        return  # no legacy column to migrate
+
+    distinct = db.execute("""
+        SELECT user_id, TRIM(purchased_at) AS value
+        FROM log
+        WHERE purchased_at IS NOT NULL AND TRIM(purchased_at) != ''
+        GROUP BY user_id, TRIM(purchased_at)
+    """)
+    for row in distinct:
+        value = row["value"]
+        # Split "Retailer Suburb" on the last space; if no space, all goes to retailer.
+        if " " in value:
+            retailer, suburb = value.rsplit(" ", 1)
+        else:
+            retailer, suburb = value, ""
+        retailer = retailer.strip()
+        suburb = suburb.strip()
+        # Already exists for this user? (case-insensitive)
+        existing = db.execute(
+            "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
+            row["user_id"], retailer, suburb,
+        )
+        if existing:
+            location_id = existing[0]["id"]
+        else:
+            db.execute(
+                "INSERT INTO locations (user_id, retailer, suburb) VALUES (?, ?, ?)",
+                row["user_id"], retailer, suburb,
+            )
+            location_id = db.execute(
+                "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
+                row["user_id"], retailer, suburb,
+            )[0]["id"]
+
+        # Backfill log rows that still point at the raw text (no location yet)
+        db.execute(
+            "UPDATE log SET location_id = ? WHERE user_id = ? AND TRIM(purchased_at) = ? AND (location_id IS NULL OR location_id = '')",
+            location_id, row["user_id"], value,
+        )
+
+    raw.close()
+
+
+migrate_locations()
+
+
+def location_label(user_id, location_id):
+    """Resolve a location_id to its 'Retailer Suburb' display string, or None."""
+    if not location_id:
+        return None
+    row = db.execute(
+        "SELECT retailer, suburb FROM locations WHERE id = ? AND user_id = ?",
+        location_id, user_id,
+    )
+    if not row:
+        return None
+    return f"{row[0]['retailer']} {row[0]['suburb']}".strip()
+
+
+def user_locations(user_id):
+    """List a user's locations as 'Retailer Suburb', ordered for the dropdown."""
+    return db.execute("""
+        SELECT id, retailer, suburb
+        FROM locations
+        WHERE user_id = ?
+        ORDER BY LOWER(retailer), LOWER(suburb)
+    """, user_id)
+
+
+def resolve_log_locations(logs, user_id):
+    """Override each log's purchased_at with the LIVE location label so renames
+    propagate to displayed views. Rows without a location keep their stored text."""
+    for log in logs:
+        if log.get("location_id"):
+            label = location_label(user_id, log["location_id"])
+            if label:
+                log["purchased_at"] = label
+    return logs
 
 # -------------------------
 # Debug: verify tables
@@ -348,7 +466,8 @@ def index():
     # Get today's date
     today_date = date.today().isoformat()
 
-    return render_template("index.html", vehicles=vehicles, fuel_types=fuel_types, today_date=today_date)
+    return render_template("index.html", vehicles=vehicles, fuel_types=fuel_types, today_date=today_date,
+                           locations=user_locations(user_id))
 
 
 @app.route("/new_record", methods=["POST"])
@@ -359,10 +478,11 @@ def new_record():
     fuel_code = request.form.get("fuel_type")
     receipt_number = request.form.get("receipt_number")
     purchased_at = request.form.get("purchased_at")
+    location_id = request.form.get("location_id") or None
     litres = request.form.get("litres")
     price_per_litre = request.form.get("price_per_litre")
     kilometres = request.form.get("kilometres")
-    comments = request.form.get("comments")
+    comments = request.form.get("comments") or ""
     log_date_str = request.form.get("date")
 
     try:
@@ -406,6 +526,20 @@ def new_record():
         # Calculate sale price and round it to 2 decimal places
         sale_price = round((litres * price_per_litre), 2)
 
+        # Resolve location: prefer the FK; keep purchased_at in sync as the
+        # display string for back-compat with existing views.
+        if location_id:
+            resolved = db.execute(
+                "SELECT id FROM locations WHERE id = ? AND user_id = ?",
+                location_id, user_id,
+            )
+            if not resolved:
+                flash("Selected location not found. Choose a valid location.", "danger")
+                return redirect(url_for("index"))
+            purchased_at = location_label(user_id, location_id)
+        else:
+            purchased_at = None
+
         # Insert into the database
         db.execute("""
             INSERT INTO log
@@ -415,13 +549,14 @@ def new_record():
                    registration,
                    receipt_number,
                    purchased_at,
+                   location_id,
                    litres,
                    price_per_litre,
                    sale_price,
                    kilometres,
                    comments)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, user_id, fuel_code, log_date, registration, receipt_number, purchased_at, litres, price_per_litre, sale_price, kilometres, comments)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, user_id, fuel_code, log_date, registration, receipt_number, purchased_at, location_id, litres, price_per_litre, sale_price, kilometres, comments)
 
         # Update odometer in the vehicles table
         odometer = db.execute("""
@@ -476,6 +611,9 @@ def view_log():
             log["litres_per_100km"] = (log["litres"] / log["kilometres"]) * 100
         else:
             log["litres_per_100km"] = 0.0
+
+    # Show live location labels so renames propagate to display
+    resolve_log_locations(logs, user_id)
 
     # Get registrations for the dropdown
     registrations = db.execute("""
@@ -570,10 +708,11 @@ def edit_log(log_id):
         fuel_code = request.form.get("fuel_code")
         receipt_number = request.form.get("receipt_number")
         purchased_at = request.form.get("purchased_at")
+        location_id = request.form.get("location_id") or None
         litres = request.form.get("litres")
         price_per_litre = request.form.get("price_per_litre")
         kilometres = request.form.get("kilometres")
-        comments = request.form.get("comments")
+        comments = request.form.get("comments") or ""
         log_date_str = request.form.get("date")
 
         try:
@@ -610,6 +749,19 @@ def edit_log(log_id):
 
             vehicle = vehicle_lookup[0]
 
+            # Resolve location: prefer FK; keep purchased_at in sync for back-compat
+            if location_id:
+                resolved = db.execute(
+                    "SELECT id FROM locations WHERE id = ? AND user_id = ?",
+                    location_id, user_id,
+                )
+                if not resolved:
+                    flash("Selected location not found. Choose a valid location.", "danger")
+                    return redirect(url_for("edit_log", log_id=log_id))
+                purchased_at = location_label(user_id, location_id)
+            else:
+                purchased_at = None
+
             # Calculate sale price
             sale_price = round(litres * price_per_litre, 2)
 
@@ -617,11 +769,11 @@ def edit_log(log_id):
             db.execute("""
                 UPDATE log
                 SET date = ?, registration = ?, fuel_code = ?, receipt_number = ?,
-                    purchased_at = ?, litres = ?, price_per_litre = ?,
+                    purchased_at = ?, location_id = ?, litres = ?, price_per_litre = ?,
                     sale_price = ?, kilometres = ?, comments = ?
                 WHERE id = ? AND user_id = ?
             """, log_date, registration, fuel_code, receipt_number,
-                 purchased_at, litres, price_per_litre, sale_price,
+                 purchased_at, location_id, litres, price_per_litre, sale_price,
                  kilometres, comments, log_id, user_id)
 
             # Adjust odometer
@@ -645,7 +797,8 @@ def edit_log(log_id):
     # Precompute Litres/100km
     log["litres_per_100km"] = (log["litres"] / log["kilometres"] * 100) if log["kilometres"] > 0 else 0.0
 
-    return render_template("edit_log.html", log=log, vehicles=vehicles, fuel_types=fuel_types)
+    return render_template("edit_log.html", log=log, vehicles=vehicles, fuel_types=fuel_types,
+                           locations=user_locations(user_id))
 
 @app.route("/stats")
 @login_required
@@ -677,6 +830,9 @@ def stats():
                 log["litres_per_100km"] = (log["litres"] / log["kilometres"]) * 100
             else:
                 log["litres_per_100km"] = 0.0
+
+        # Show live location label so renames propagate to display
+        last_log_result = resolve_log_locations(last_log_result, user_id)
 
         last_log = last_log_result[0] if last_log_result else None
 
@@ -777,6 +933,9 @@ def vehicle_stats(registration):
                 log["litres_per_100km"] = (log["litres"] / log["kilometres"]) * 100
             else:
                 log["litres_per_100km"] = 0.0
+
+        # Show live location label so renames propagate to display
+        vehicle_log = resolve_log_locations(vehicle_log, user_id)
 
         # Fetch the earliest date from the log table for the user
         earliest_date_result = db.execute("""
@@ -902,6 +1061,132 @@ def garage():
         """, user_id)
 
     return render_template("garage.html", vehicles=vehicles)
+
+
+@app.route("/locations")
+@login_required
+def locations():
+    user_id = session["user_id"]
+
+    # All user's locations, with usage count per location
+    locations_list = db.execute("""
+        SELECT
+            l.id,
+            l.retailer,
+            l.suburb,
+            COUNT(log.id) AS usage_count
+        FROM locations l
+        LEFT JOIN log ON log.location_id = l.id
+        WHERE l.user_id = ?
+        GROUP BY l.id
+        ORDER BY LOWER(l.retailer), LOWER(l.suburb)
+    """, user_id)
+
+    return render_template("locations.html", locations=locations_list)
+
+
+@app.route("/locations/add", methods=["POST"])
+@login_required
+def add_location():
+    user_id = session["user_id"]
+    retailer = request.form.get("retailer", "").strip()
+    suburb = request.form.get("suburb", "").strip()
+    ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def json_out(ok, label=None, location_id=None, error=None):
+        return jsonify({"ok": ok, "label": label, "location_id": location_id, "error": error})
+
+    if not retailer or not suburb:
+        if ajax:
+            return json_out(False, error="Both retailer and suburb are required."), 400
+        flash("Both retailer and suburb are required.", "danger")
+        return redirect(url_for("locations"))
+
+    # Check for existing (case-insensitive) before inserting
+    existing = db.execute(
+        "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
+        user_id, retailer, suburb,
+    )
+    if existing:
+        loc_id = existing[0]["id"]
+        label = f"{retailer} {suburb}"
+        if ajax:
+            return json_out(True, label=label, location_id=loc_id, error="already_exists")
+        flash(f"Location '{retailer} {suburb}' already exists.", "warning")
+        return redirect(url_for("locations"))
+
+    db.execute(
+        "INSERT INTO locations (user_id, retailer, suburb) VALUES (?, ?, ?)",
+        user_id, retailer, suburb,
+    )
+    new_id = db.execute(
+        "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
+        user_id, retailer, suburb,
+    )[0]["id"]
+
+    if ajax:
+        return json_out(True, label=f"{retailer} {suburb}", location_id=new_id)
+
+    flash("Location added successfully.", "success")
+    return redirect(url_for("locations"))
+
+
+@app.route("/locations/<int:location_id>/edit", methods=["POST"])
+@login_required
+def edit_location(location_id):
+    user_id = session["user_id"]
+    retailer = request.form.get("retailer", "").strip()
+    suburb = request.form.get("suburb", "").strip()
+
+    if not retailer or not suburb:
+        flash("Both retailer and suburb are required.", "danger")
+        return redirect(url_for("locations"))
+
+    # Duplicate check against a *different* id
+    dup = db.execute(
+        "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?) AND id != ?",
+        user_id, retailer, suburb, location_id,
+    )
+    if dup:
+        flash(f"Location '{retailer} {suburb}' already exists.", "warning")
+        return redirect(url_for("locations"))
+
+    db.execute(
+        "UPDATE locations SET retailer = ?, suburb = ? WHERE id = ? AND user_id = ?",
+        retailer, suburb, location_id, user_id,
+    )
+    # Because log rows reference this location by id, editing automatically
+    # propagates the new name to every existing log entry.
+    flash("Location updated — applies to all existing log entries.", "success")
+    return redirect(url_for("locations"))
+
+
+@app.route("/locations/<int:location_id>/delete", methods=["POST"])
+@login_required
+def delete_location(location_id):
+    user_id = session["user_id"]
+
+    # Verify the location belongs to this user
+    loc = db.execute(
+        "SELECT id FROM locations WHERE id = ? AND user_id = ?", location_id, user_id)
+    if not loc:
+        flash("Location not found.", "danger")
+        return redirect(url_for("locations"))
+
+    # Check if it's referenced by any log entry
+    in_use = db.execute(
+        "SELECT COUNT(*) AS n FROM log WHERE location_id = ?", location_id)
+    if in_use[0]["n"] > 0:
+        flash(
+            f"Cannot delete — this location is still used by {in_use[0]['n']} log "
+            f"entr{'y' if in_use[0]['n'] == 1 else 'ies'}. Edit it instead, or reassign those entries first.",
+            "danger",
+        )
+        return redirect(url_for("locations"))
+
+    db.execute("DELETE FROM locations WHERE id = ? AND user_id = ?", location_id, user_id)
+    flash("Location deleted.", "success")
+    return redirect(url_for("locations"))
 
 
 @app.route("/vehicle/<registration>")
