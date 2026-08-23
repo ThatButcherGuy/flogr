@@ -1368,6 +1368,7 @@ def api_stats():
             "litres_per_100km": round(lpk, 2),
             "location": loc,
             "location_id": l["location_id"],
+            "retailer": l.get("loc_retailer") or None,
             "partial_tank": bool(l.get("partial_tank")),
         })
 

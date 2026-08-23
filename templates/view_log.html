@@ -21,13 +21,23 @@ View Log
 
 <script>
 $(document).ready( function () {
-    // Initialize DataTables with options
+    // Initialize DataTables with explicit column types so sorting works reliably,
+    // even though columns may mix numbers and the "Partial" badge text.
     $('#logTable').DataTable({
         "paging": true,
         "searching": true,
         "ordering": true,
         "order": [[ 1, "desc" ]],  // Default sorting by date column in descending order
         "responsive": true,
+        "columnDefs": [
+            { "targets": 0, "orderable": false },                     // Actions (icons) - not sortable
+            { "targets": 3, "orderable": false },                     // Fuel code
+            { "targets": 6, "type": "num" },                          // Litres (ISO-safe numeric)
+            { "targets": 7, "type": "num" },                          // Price/L
+            { "targets": 8, "type": "num" },                          // Sale price
+            { "targets": 9, "type": "num" },                          // Kilometres
+            { "targets": 10, "type": "num", "sortOrder": "desc" }     // L/100km (uses data-sort attr)
+        ],
         "initComplete": function () {
             $('#logTable_filter input').attr('id', 'logSearch');
         }
@@ -97,7 +107,7 @@ $(document).ready( function () {
                         <td>{{ log['price_per_litre'] }}</td>
                         <td>{{ log['sale_price'] }}</td>
                         <td>{{ log['kilometres'] }}</td>
-                        <td>
+                        <td data-sort="{{ log['litres_per_100km'] if not log.get('partial_tank') else 9999 }}">
                             {% if log.get('partial_tank') %}
                                 <span class="badge bg-warning text-dark" title="Partial top-up — excluded from fuel-economy stats">Partial</span>
                             {% else %}
