@@ -978,13 +978,20 @@ def stats():
         cost_per_100km = (total_sale_price / total_kilometres * 100) if total_kilometres else 0.0
         avg_cost_per_tank = (total_sale_price / fill_count) if fill_count else 0.0
 
-        # Economy extremes from the filtered set
+        # Economy extremes from the filtered set.
+        # Low L/100km = best economy (MIN); high = worst (MAX).
+        # Guard: only consider physically plausible rows (excludes outliers such
+        # as a 0.01 L "fill" over ~450 km, or 83 L over 26 km).
         econ_res = db.execute(f"""
             SELECT
-                MAX(litres / kilometres * 100) AS best_lpk,
-                MIN(litres / kilometres * 100) AS worst_lpk
-            FROM log
-            WHERE {where} AND kilometres > 0
+                MIN(litres / kilometres * 100) AS best_lpk,
+                MAX(litres / kilometres * 100) AS worst_lpk
+            FROM (
+                SELECT litres, kilometres
+                FROM log
+                WHERE {where} AND kilometres > 0 AND litres > 0
+                  AND (litres / kilometres * 100) BETWEEN 3 AND 40
+            )
             """, *params)
         best_lpk = econ_res[0]["best_lpk"] if econ_res[0]["best_lpk"] else 0.0
         worst_lpk = econ_res[0]["worst_lpk"] if econ_res[0]["worst_lpk"] else 0.0
@@ -1195,14 +1202,20 @@ def vehicle_stats(registration):
         vehicle_tank_count = vehicle_stats[0].get("vehicle_tank_count") or 0
         vehicle_avg_cost_per_tank = (vehicle_total_sale_price / vehicle_tank_count) if vehicle_tank_count else 0.0
 
-        # Economy extremes for this vehicle in the date range
+        # Economy extremes for this vehicle in the date range.
+        # Low L/100km = best (MIN); high = worst (MAX).
+        # Guard against implausible outliers (bad litres or km entries).
         econ_res = db.execute("""
             SELECT
-                MAX(litres / kilometres * 100) AS best,
-                MIN(litres / kilometres * 100) AS worst
-            FROM log
-            WHERE user_id = ? AND registration = ? AND kilometres > 0
-              AND date >= ? AND date <= ?
+                MIN(litres / kilometres * 100) AS best,
+                MAX(litres / kilometres * 100) AS worst
+            FROM (
+                SELECT litres, kilometres
+                FROM log
+                WHERE user_id = ? AND registration = ? AND kilometres > 0 AND litres > 0
+                  AND (litres / kilometres * 100) BETWEEN 3 AND 40
+                  AND date >= ? AND date <= ?
+            )
             """, user_id, registration, start_date.date(), end_date.date())
         vehicle_best_lpk = econ_res[0]["best"] if econ_res[0]["best"] else 0.0
         vehicle_worst_lpk = econ_res[0]["worst"] if econ_res[0]["worst"] else 0.0

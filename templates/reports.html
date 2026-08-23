@@ -191,6 +191,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const byMonth = {};
         logs.forEach(l => {
             const key = l.date.slice(0, 7);
+            // Guard: only include physically plausible economy values (3–40 L/100km)
+            // so data-entry outliers don't skew the monthly trend.
+            if (!(l.litres_per_100km >= 3 && l.litres_per_100km <= 40)) return;
             if (!byMonth[key]) byMonth[key] = { p: 0, l: 0, n: 0 };
             byMonth[key].p += l.price_per_litre;
             byMonth[key].l += l.litres_per_100km;
