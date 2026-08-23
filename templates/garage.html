@@ -40,7 +40,7 @@ Garage
                     <td>{{ vehicle.make }}</td>
                     <td>{{ vehicle.model }}</td>
                     <td class="d-none d-sm-table-cell">{{ vehicle.year }}</td>
-                    <td class="d-none d-sm-table-cell">{{ vehicle.odometer }}</td>
+                    <td class="d-none d-sm-table-cell">{{ "{:,.0f}".format(vehicle.odometer) }} km</td>
                 </tr>
                 {% endfor %}
             </tbody>

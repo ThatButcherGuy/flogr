@@ -853,9 +853,10 @@ def export_log():
             ORDER BY date DESC
         """, user_id)
 
-    # Compute litres_per_100km
+    # Compute litres_per_100km (rounded to 2 decimal places)
     for log in logs:
-        log["litres_per_100km"] = (log["litres"] / log["kilometres"]) * 100 if log["kilometres"] > 0 else 0.0
+        lpk = (log["litres"] / log["kilometres"]) * 100 if log["kilometres"] > 0 else 0.0
+        log["litres_per_100km"] = round(lpk, 2)
 
     # Create CSV in memory
     si = StringIO()

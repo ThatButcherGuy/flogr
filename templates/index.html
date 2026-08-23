@@ -14,7 +14,7 @@ Home
                 <div class="row">
                     <div class="col-md-12">
                         <div class="mb-3">
-                            <label for="registration" class="form-label">Select Vehicle</label>
+                            <label for="registration" class="form-label req">Select Vehicle</label>
                             <select id="registration" class="form-control" name="registration" required>
                                 <option value="" selected disabled>Registration</option>
                                 {% for vehicle in vehicles %}
@@ -27,7 +27,7 @@ Home
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="fuel_type" class="form-label">Fuel Type</label>
+                            <label for="fuel_type" class="form-label req">Fuel Type</label>
                             <select id="fuel_type" class="form-control" name="fuel_type" required>
                                 <option value="" selected disabled>Fuel Type</option>
                                 {% for fuel in fuel_types %}
@@ -38,7 +38,7 @@ Home
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="date" class="form-label">Date</label>
+                            <label for="date" class="form-label req">Date</label>
                             <input id="date" class="form-control" type="date" name="date" value="{{ today_date }}" required>
                         </div>
                     </div>
@@ -53,20 +53,20 @@ Home
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label for="purchased_at" class="form-label">Purchased At</label>
-                            <input id="purchased_at" class="form-control" type="text" name="purchased_at" placeholder="Enter purchase location" required>
+                            <input id="purchased_at" class="form-control" type="text" name="purchased_at" placeholder="Enter purchase location">
                         </div>
                     </div>
                 </div>
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="litres" class="form-label">Litres</label>
+                            <label for="litres" class="form-label req">Litres</label>
                             <input id="litres" class="form-control" type="number" name="litres" min="0" step="0.01" placeholder="Enter litres" required>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="price_per_litre" class="form-label">Price per Litre</label>
+                            <label for="price_per_litre" class="form-label req">Price per Litre</label>
                             <input id="price_per_litre" class="form-control" type="number" name="price_per_litre" min="0" step="0.001" placeholder="Enter price per litre" required>
                         </div>
                     </div>
@@ -74,7 +74,7 @@ Home
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="kilometres" class="form-label">Kilometres</label>
+                            <label for="kilometres" class="form-label req">Kilometres</label>
                             <input id="kilometres" class="form-control" type="number" name="kilometres" min="0" step="1" placeholder="Enter kilometre reading" required>
                         </div>
                     </div>
@@ -87,6 +87,7 @@ Home
                     </div>
                 </div>
                 <button class="btn btn-primary" type="submit">Save</button>
+                <span class="text-muted ms-2" style="font-size: small;"><span style="color:#dc3545;">*</span> required</span>
             </form>
         </div>
     </div>
