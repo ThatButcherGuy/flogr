@@ -6,118 +6,126 @@ Statistics
 
 {% block main %}
 <div class="container">
-    <h2>Statistics for {{ username }}</h2><br>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Statistics for {{ username }}</h2>
+        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary">Open Reports &amp; Charts</a>
+    </div>
 
+    <!-- Global stat cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">${{ "{:,.2f}".format(total_sale_price) }}</div>
+                <div class="stat-label">Total spend</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{{ "{:,.2f}".format(total_litres) }} L</div>
+                <div class="stat-label">Total litres</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{{ "{:,.0f}".format(total_kilometres) }} km</div>
+                <div class="stat-label">Total distance</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{{ "{:,.2f}".format(combined_litres_per_100km) }}</div>
+                <div class="stat-label">L/100km (combined)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Last log -->
+    {% if last_log %}
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Last Fill</h5></div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">{{ last_log.date }}</div>
+                    <div class="stat-label">Date</div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">{{ days_since_last_fill }}d</div>
+                    <div class="stat-label">Days since</div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">{{ "{:,.2f}".format(last_log.litres_per_100km) }}</div>
+                    <div class="stat-label">L/100km</div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">${{ "{:.3f}".format(last_log.price_per_litre) }}</div>
+                    <div class="stat-label">$/L</div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">${{ "{:.2f}".format(last_log.sale_price) }}</div>
+                    <div class="stat-label">Cost</div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="stat-value small">{{ last_log.purchased_at or '—' }}</div>
+                    <div class="stat-label">Location</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Global detail table -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Global Stats</h5></div>
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Statistic</th>
+                        <th scope="col">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Total Fill-ups</td><td>{{ fill_count }}</td></tr>
+                    <tr><td>Last Fill Date</td><td>{{ last_log.date if last_log else '—' }}</td></tr>
+                    <tr>
+                        <td>Days Since Last Fill</td>
+                        <td>{{ days_since }} day{{ 's' if days_since != 1 }}</td>
+                    </tr>
+                    <tr><td>Total Combined Sale Price</td><td>${{ "{:,.2f}".format(total_sale_price) }}</td></tr>
+                    <tr><td>Total Combined Litres</td><td>{{ "{:,.2f}".format(total_litres) }} litres</td></tr>
+                    <tr><td>Total Combined Kilometres</td><td>{{ "{:,.0f}".format(total_kilometres) }} km</td></tr>
+                    <tr><td>Average Price Per Litre</td><td>${{ "{:,.3f}".format(avg_price_per_litre) }}</td></tr>
+                    <tr><td>Average Kilometres Per Tank</td><td>{{ "{:,.2f}".format(avg_kilometres) }} km</td></tr>
+                    <tr><td>Combined Litres per 100 km</td><td>{{ "{:,.2f}".format(combined_litres_per_100km) }} L/100km</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Vehicles quick list -->
     {% if vehicles %}
-    <h3>Vehicles</h3>
-    <div class="table-responsive">
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                    <th>Registration</th>
-                    <th>Vehicle</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for vehicle in vehicles %}
+    <div class="card">
+        <div class="card-header"><h5 class="mb-0">Vehicles</h5></div>
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Registration</th>
+                        <th scope="col">Vehicle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vehicle in vehicles %}
                     <tr>
                         <td><a href="{{ url_for('vehicle_stats', registration=vehicle.registration) }}">{{ vehicle.registration }}</a></td>
                         <td>{{ vehicle.make }} {{ vehicle.model }}</td>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-        <p>No vehicles found.</p>
-    {% endif %}<br>
-
-    {% if last_log %}
-        <h3>Last Log</h3>
-        <div class="table-responsive">
-            <table class="table table-bordered table-striped">
-                <thead>
-                    <tr>
-                        <th>Detail</th>
-                        <th>Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Date</td>
-                        <td>{{ last_log.date }}</td>
-                    </tr>
-                    <tr>
-                        <td>Registration</td>
-                        <td>{{ last_log.registration }}</td>
-                    </tr>
-                    <tr>
-                        <td>Days Since Last Fill</td>
-                        <td>{{ days_since_last_fill }} days ago</td>
-                    </tr>
-                    <tr>
-                        <td>Kilometres on Last Tank</td>
-                        <td>{{ last_log.kilometres }} km</td>
-                    </tr>
-                    <tr>
-                        <td>Last Sale Price</td>
-                        <td>${{ "%.2f" | format(last_log.sale_price) }}</td>
-                    </tr>
-                    <tr>
-                        <td>Last Price Per Litre</td>
-                        <td>${{ "%.3f" | format(last_log.price_per_litre) }}</td>
-                    </tr>
-                    <tr>
-                        <td>Last Litres Per 100km</td>
-                        <td>{{ "{:,.2f}".format(last_log.litres_per_100km) }} L/100km</td>
-                    </tr>
-                    <tr>
-                        <td>Last Fill Up At</td>
-                        <td>{{ last_log.purchased_at }}</td>
-                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
-    {% else %}
-        <p>No logs found.</p>
-    {% endif %}<br>
-
-    <h3>Global Stats</h3>
-    <div class="table-responsive">
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                    <th>Statistic</th>
-                    <th>Value</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Total Combined Sale Price</td>
-                    <td>${{ "{:,.2f}".format(total_sale_price) }}</td>
-                </tr>
-                <tr>
-                    <td>Total Combined Litres</td>
-                    <td>{{ "{:,.2f}".format(total_litres) }} litres</td>
-                </tr>
-                <tr>
-                    <td>Total Combined Kilometres</td>
-                    <td>{{ "{:,.0f}".format(total_kilometres) }} km</td>
-                </tr>
-                <tr>
-                    <td>Total Combined Litres per 100 km</td>
-                    <td>{{ "{:,.2f}".format(combined_litres_per_100km) }} L/100km</td>
-                </tr>
-                <tr>
-                    <td>Average Combined Price Per Litre</td>
-                    <td>${{ "{:,.3f}".format(avg_price_per_litre) }}</td>
-                </tr>
-                <tr>
-                    <td>Average Combined Kilometres Per Tank</td>
-                    <td>{{ "{:,.2f}".format(avg_kilometres) }} km</td>
-                </tr>
-            </tbody>
-        </table>
     </div>
+    {% endif %}
 </div>
 {% endblock %}
