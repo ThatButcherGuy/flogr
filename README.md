@@ -37,6 +37,11 @@ fLOGr is a web-based fuel logging application intended to capture data from the 
 
 fLOGr has been developed by Brenden Taylor (GitHub user: ThatButcherGuy) as the final project for the Harvard CS50x class of 2024.
 
+### Theming & Branding
+
+- **Light / dark themes** — use the 🌙/☀️ toggle in the navbar. Your choice is saved in `localStorage` (`flogr-theme`) and remembered across sessions; the saved theme is applied before page render to avoid a flash of the wrong theme.
+- **Home-screen icon (iOS)** — an `apple-touch-icon` is provided so adding fLOGr to your iOS home screen shows a branded fLOGr icon (navy/blue/yellow fuel motif). Favicons are supplied in .ico and PNG sizes.
+
 ---
 
 ### Authentication
