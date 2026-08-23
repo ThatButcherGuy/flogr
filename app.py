@@ -183,6 +183,10 @@ def migrate_locations():
     column_was_missing = "location_id" not in log_cols
     if column_was_missing:
         raw.execute("ALTER TABLE log ADD COLUMN location_id INTEGER")
+
+    # Add log.partial_tank if missing (partial fill-ups excluded from economy)
+    if "partial_tank" not in log_cols:
+        raw.execute("ALTER TABLE log ADD COLUMN partial_tank INTEGER DEFAULT 0")
     raw.commit()
 
     # 3) One-time backfill of free-text purchased_at into locations.
@@ -544,6 +548,7 @@ def new_record():
     kilometres = request.form.get("kilometres")
     comments = request.form.get("comments") or ""
     log_date_str = request.form.get("date")
+    partial_tank = 1 if request.form.get("partial_tank") else 0
 
     try:
         # Perform validation before inserting into the database
@@ -614,9 +619,10 @@ def new_record():
                    price_per_litre,
                    sale_price,
                    kilometres,
-                   comments)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, user_id, fuel_code, log_date, registration, receipt_number, purchased_at, location_id, litres, price_per_litre, sale_price, kilometres, comments)
+                   comments,
+                   partial_tank)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, user_id, fuel_code, log_date, registration, receipt_number, purchased_at, location_id, litres, price_per_litre, sale_price, kilometres, comments, partial_tank)
 
         # Update odometer in the vehicles table
         odometer = db.execute("""
@@ -774,6 +780,7 @@ def edit_log(log_id):
         kilometres = request.form.get("kilometres")
         comments = request.form.get("comments") or ""
         log_date_str = request.form.get("date")
+        partial_tank = 1 if request.form.get("partial_tank") else 0
 
         try:
             # Validate numeric fields
@@ -830,11 +837,11 @@ def edit_log(log_id):
                 UPDATE log
                 SET date = ?, registration = ?, fuel_code = ?, receipt_number = ?,
                     purchased_at = ?, location_id = ?, litres = ?, price_per_litre = ?,
-                    sale_price = ?, kilometres = ?, comments = ?
+                    sale_price = ?, kilometres = ?, comments = ?, partial_tank = ?
                 WHERE id = ? AND user_id = ?
             """, log_date, registration, fuel_code, receipt_number,
                  purchased_at, location_id, litres, price_per_litre, sale_price,
-                 kilometres, comments, log_id, user_id)
+                 kilometres, comments, partial_tank, log_id, user_id)
 
             # Adjust odometer
             old_km = log['kilometres']
@@ -974,6 +981,17 @@ def stats():
         total_kilometres = global_stats[0]["total_kilometres"] if global_stats[0]["total_kilometres"] else 0.0
         fill_count = global_stats[0]["fill_count"] if global_stats[0]["fill_count"] else 0
 
+        # Economy uses FULL tanks only (exclude partial top-ups from L/100km).
+        economy_stats = db.execute(f"""
+            SELECT
+                SUM(litres) AS econ_litres,
+                SUM(kilometres) AS econ_km
+            FROM log
+            WHERE {where} AND partial_tank = 0
+            """, *params)
+        econ_litres = economy_stats[0]["econ_litres"] if economy_stats[0]["econ_litres"] else 0.0
+        econ_km = economy_stats[0]["econ_km"] if economy_stats[0]["econ_km"] else 0.0
+
         # Additional useful stats (filtered): cost per 100km, best/worst economy
         cost_per_100km = (total_sale_price / total_kilometres * 100) if total_kilometres else 0.0
         avg_cost_per_tank = (total_sale_price / fill_count) if fill_count else 0.0
@@ -984,20 +1002,21 @@ def stats():
         # as a 0.01 L "fill" over ~450 km, or 83 L over 26 km).
         econ_res = db.execute(f"""
             SELECT
-                MIN(litres / kilometres * 100) AS best_lpk,
-                MAX(litres / kilometres * 100) AS worst_lpk
+                MIN(lpk) AS best_lpk,
+                MAX(lpk) AS worst_lpk
             FROM (
-                SELECT litres, kilometres
+                SELECT 1.0 * litres / kilometres * 100 AS lpk
                 FROM log
                 WHERE {where} AND kilometres > 0 AND litres > 0
-                  AND (litres / kilometres * 100) BETWEEN 3 AND 40
+                  AND partial_tank = 0
+                  AND (1.0 * litres / kilometres * 100) BETWEEN 3 AND 40
             )
             """, *params)
         best_lpk = econ_res[0]["best_lpk"] if econ_res[0]["best_lpk"] else 0.0
         worst_lpk = econ_res[0]["worst_lpk"] if econ_res[0]["worst_lpk"] else 0.0
 
-        # Calculate GLobal Litres per 100km
-        combined_litres_per_100km = (total_litres / total_kilometres) * 100 if total_kilometres else 0.0
+        # Calculate global litres per 100km from FULL tanks only (exclude partials)
+        combined_litres_per_100km = (econ_litres / econ_km) * 100 if econ_km else 0.0
 
         # ---- Per-vehicle comparison (within the current filter) ----
         # economy (L/100km), cost per 100km, avg range per tank, tank count
@@ -1194,8 +1213,16 @@ def vehicle_stats(registration):
         vehicle_total_kilometres = vehicle_stats[0]["vehicle_total_kilometres"] if vehicle_stats[0]["vehicle_total_kilometres"] else 0.0
 
         # Calculate litres per hundred
-        # Calculate litres per hundred
-        mileage = (vehicle_total_litres / vehicle_total_kilometres) * 100 if vehicle_total_kilometres else 0.0
+        # Calculate litres per hundred — from FULL tanks only (exclude partials)
+        veh_econ = db.execute("""
+            SELECT SUM(litres) AS lit, SUM(kilometres) AS km
+            FROM log
+            WHERE user_id = ? AND registration = ? AND partial_tank = 0
+              AND date >= ? AND date <= ?
+            """, user_id, registration, start_date.date(), end_date.date())
+        econ_lit = veh_econ[0]["lit"] or 0.0
+        econ_km = veh_econ[0]["km"] or 0.0
+        mileage = (econ_lit / econ_km) * 100 if econ_km else 0.0
 
         # Extra vehicle stats
         vehicle_cost_per_100km = (vehicle_total_sale_price / vehicle_total_kilometres * 100) if vehicle_total_kilometres else 0.0
@@ -1207,13 +1234,14 @@ def vehicle_stats(registration):
         # Guard against implausible outliers (bad litres or km entries).
         econ_res = db.execute("""
             SELECT
-                MIN(litres / kilometres * 100) AS best,
-                MAX(litres / kilometres * 100) AS worst
+                MIN(lpk) AS best,
+                MAX(lpk) AS worst
             FROM (
-                SELECT litres, kilometres
+                SELECT 1.0 * litres / kilometres * 100 AS lpk
                 FROM log
                 WHERE user_id = ? AND registration = ? AND kilometres > 0 AND litres > 0
-                  AND (litres / kilometres * 100) BETWEEN 3 AND 40
+                  AND partial_tank = 0
+                  AND (1.0 * litres / kilometres * 100) BETWEEN 3 AND 40
                   AND date >= ? AND date <= ?
             )
             """, user_id, registration, start_date.date(), end_date.date())
@@ -1309,6 +1337,7 @@ def api_stats():
             log.kilometres,
             log.comments,
             log.location_id,
+            log.partial_tank,
             vehicles.make,
             vehicles.model,
             locations.retailer AS loc_retailer,
@@ -1339,6 +1368,7 @@ def api_stats():
             "litres_per_100km": round(lpk, 2),
             "location": loc,
             "location_id": l["location_id"],
+            "partial_tank": bool(l.get("partial_tank")),
         })
 
     # Vehicles + locations for the filter dropdowns

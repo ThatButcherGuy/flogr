@@ -52,6 +52,7 @@ CREATE TABLE log (
     sale_price DECIMAL(6,2) NOT NULL CHECK (sale_price >= 0),
     kilometres INTEGER NOT NULL CHECK (kilometres >= 0),
     comments VARCHAR(150),
+    partial_tank INTEGER DEFAULT 0 CHECK (partial_tank IN (0,1)),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (fuel_code) REFERENCES fuel_types(code),
     FOREIGN KEY (registration) REFERENCES vehicles(registration)
