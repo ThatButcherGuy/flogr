@@ -38,8 +38,11 @@ $(document).ready( function () {
 
 {% block main %}
 <div class="container">
-    <h2 class="text-center mt-4">Log</h2>
-
+    <div class="card mb-4">
+        <div class="card-header text-center">
+            <h2 class="mb-0">Log</h2>
+        </div>
+        <div class="card-body">
     <div class="row justify-content-center mt-3">
         <div class="col-md-8">
             <form method="POST" action="{{ url_for('view_log') }}" class="mb-3">
@@ -125,6 +128,8 @@ $(document).ready( function () {
                     </a>
                 </div>
             </form>
+        </div>
+    </div>
         </div>
     </div>
 </div>

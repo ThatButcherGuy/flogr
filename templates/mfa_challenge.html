@@ -1,10 +1,24 @@
 {% extends "layout.html" %}
 {% block title %}Two-factor authentication{% endblock %}
 {% block main %}
-<h1>Two-factor authentication</h1>
-<form method="post" class="mx-auto" style="max-width:360px">
-  <div class="mb-3"><label>Verification code</label><input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" /></div>
-  <div class="mb-3"><label>Or use a recovery code</label><input name="recovery_code" class="form-control" autocomplete="off" /></div>
-  <button class="btn btn-primary" type="submit">Verify</button>
-</form>
+<div class="auth-card">
+    <div class="card">
+        <div class="card-header text-center">
+            <h3 class="mb-0">Two-factor authentication</h3>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label">Verification code</label>
+                    <input name="code" class="form-control" autocomplete="one-time-code" inputmode="numeric" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Or use a recovery code</label>
+                    <input name="recovery_code" class="form-control" autocomplete="off">
+                </div>
+                <button class="btn btn-primary w-100" type="submit">Verify</button>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
