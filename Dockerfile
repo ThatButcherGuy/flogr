@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     build-essential \
-  && python -m pip install --upgrade pip setuptools==78.1.1 wheel \
+  && python -m pip install --upgrade pip setuptools==84.0.0 wheel \
   && pip3 install --no-cache-dir -r requirements.txt \
   && apt-get remove -y build-essential python3-dev gcc \
   && apt-get autoremove -y \
