@@ -191,8 +191,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const byMonth = {};
         logs.forEach(l => {
             const key = l.date.slice(0, 7);
-            // Guard: only include physically plausible economy values (3–40 L/100km)
-            // so data-entry outliers don't skew the monthly trend.
+            // Economy uses FULL tanks only: skip partial top-ups and implausible
+            // values (3–40 L/100km) so outliers don't skew the monthly trend.
+            if (l.partial_tank) return;
             if (!(l.litres_per_100km >= 3 && l.litres_per_100km <= 40)) return;
             if (!byMonth[key]) byMonth[key] = { p: 0, l: 0, n: 0 };
             byMonth[key].p += l.price_per_litre;
@@ -300,12 +301,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 const byVeh = {};
                 logs.forEach(l => {
                     const k = l.vehicle + ' (' + l.registration + ')';
-                    if(!byVeh[k]) byVeh[k] = { lpk:0, cost:0, litres:0, km:0, spend:0 };
-                    byVeh[k].litres += l.litres; byVeh[k].km += l.kilometres; byVeh[k].spend += l.sale_price;
+                    if(!byVeh[k]) byVeh[k] = { lit:0, km:0, litFull:0, kmFull:0, spend:0 };
+                    byVeh[k].lit += l.litres; byVeh[k].km += l.kilometres; byVeh[k].spend += l.sale_price;
+                    // Economy (dataset 1) uses full tanks only
+                    if (!l.partial_tank) { byVeh[k].litFull += l.litres; byVeh[k].kmFull += l.kilometres; }
                 });
                 const vKeys = Object.keys(byVeh);
                 charts.perVehicle.data.labels = vKeys;
-                charts.perVehicle.data.datasets[0].data = vKeys.map(k => { const v=byVeh[k]; return v.km ? +(v.litres/v.km*100).toFixed(2) : 0; });
+                charts.perVehicle.data.datasets[0].data = vKeys.map(k => { const v=byVeh[k]; return v.kmFull ? +(v.litFull/v.kmFull*100).toFixed(2) : 0; });
                 charts.perVehicle.data.datasets[1].data = vKeys.map(k => { const v=byVeh[k]; return v.km ? +(v.spend/v.km*100).toFixed(2) : 0; });
                 charts.perVehicle.update();
             }

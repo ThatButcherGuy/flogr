@@ -97,7 +97,13 @@ $(document).ready( function () {
                         <td>{{ log['price_per_litre'] }}</td>
                         <td>{{ log['sale_price'] }}</td>
                         <td>{{ log['kilometres'] }}</td>
-                        <td>{{ "{:,.2f}".format(log['litres_per_100km']) }}</td>
+                        <td>
+                            {% if log.get('partial_tank') %}
+                                <span class="badge bg-warning text-dark" title="Partial top-up — excluded from fuel-economy stats">Partial</span>
+                            {% else %}
+                                {{ "{:,.2f}".format(log['litres_per_100km']) }}
+                            {% endif %}
+                        </td>
                         <td>{{ log['comments'] }}</td>
                     </tr>
                 {% endfor %}
