@@ -39,13 +39,13 @@ fLOGr has been developed by Brenden Taylor (GitHub user: ThatButcherGuy) as the 
 
 ### Theming & Branding
 
-- **Light / dark themes** — use the 🌙/☀️ toggle in the navbar. Your choice is saved in `localStorage` (`flogr-theme`) and remembered across sessions; the saved theme is applied before page render to avoid a flash of the wrong theme.
+- **Light / dark / auto themes** — the navbar 🌙/☀️/🖥️ toggle cycles Light, Dark and Auto (follows your system). Manage it from **Settings**. Your choice is saved in `localStorage` (`flogr-theme`) and remembered across sessions; the saved theme is applied before page render to avoid a flash of the wrong theme.
 
 ---
 
 ### Authentication
 
-fLOGr supports two authentication methods, switchable in the **Account Security** page (`/account`):
+fLOGr supports two authentication methods, switchable in the **Settings** page (`/settings`):
 
 | Method | Description |
 |--------|-------------|
@@ -62,9 +62,9 @@ If Authentik is unreachable, the login page shows a clear warning and the user c
 
 #### Two-Factor Authentication (TOTP)
 
-Users can enable TOTP-based 2FA from the Account Security page:
+Users can enable TOTP-based 2FA from the Settings page:
 
-1. Navigate to **Account** in the navbar
+1. Navigate to **Settings** in the navbar
 2. Click **Enable Two-Factor Authentication**
 3. Scan the secret into your authenticator app (Authy, Google Authenticator, 1Password, etc.)
 4. Enter the verification code to confirm
@@ -72,9 +72,9 @@ Users can enable TOTP-based 2FA from the Account Security page:
 
 Users with 2FA enabled will be prompted for a TOTP code after entering their password. 2FA is only enforced for password login — Authentik handles its own MFA.
 
-#### Account Security Page
+#### Settings Page
 
-The `/account` page (linked in the navbar when logged in) shows:
+The `/settings` page (linked in the navbar when logged in) shows:
 
 - Username and email
 - Authentik (OIDC) status — enable/disable per-user

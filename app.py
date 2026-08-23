@@ -160,12 +160,21 @@ def migrate_locations():
 
     # 2) Add log.location_id if missing
     log_cols = [row[1] for row in raw.execute("PRAGMA table_info(log)")]
-    if "location_id" not in log_cols:
+    column_was_missing = "location_id" not in log_cols
+    if column_was_missing:
         raw.execute("ALTER TABLE log ADD COLUMN location_id INTEGER")
     raw.commit()
 
-    # 3) Backfill: import distinct existing free-text purchased_at values
-    #    (per user) into locations and point existing log rows at them.
+    # 3) One-time backfill of free-text purchased_at into locations.
+    #    This runs ONLY on the first boot where location_id is freshly added
+    #    (i.e. on upgrading from pre-3.x to the location database). On every
+    #    later boot the column already exists, so we skip it entirely. This
+    #    prevents the migration from re-creating "rogue" locations each time
+    #    the app starts after the user has cleaned up their location list.
+    if not column_was_missing:
+        raw.close()
+        return  # migration already applied on a prior boot
+
     cols = [row[1] for row in raw.execute("PRAGMA table_info(log)")]
     if "purchased_at" not in cols:
         raw.close()
@@ -1366,21 +1375,28 @@ def edit_vehicle(registration):
 # ------------------------------------------------------------------
 # Two-factor authentication
 # ------------------------------------------------------------------
-@app.route("/account")
+@app.route("/settings")
 @login_required
-def account():
-    """Account / Security settings page"""
+def settings():
+    """Settings page: appearance + account/security + data links"""
     user_id = session["user_id"]
     user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
     two_factor = bool(user.get("two_factor_enabled"))
     user_oidc = bool(int(user.get("oidc_enabled") or 0))
     return render_template(
-        "account.html",
+        "settings.html",
         user=user,
         two_factor=two_factor,
         user_oidc_enabled=user_oidc,
         oidc_globally_enabled=OIDC_REGISTERED,
     )
+
+
+@app.route("/account")
+@login_required
+def account():
+    """Legacy alias so old links/bookmarks still work."""
+    return redirect(url_for("settings"))
 
 
 @app.route("/account/oidc/toggle", methods=["POST"])

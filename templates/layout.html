@@ -19,17 +19,21 @@
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 
     <title>fLOGr: {% block title %}{% endblock %}</title>
-    <!-- Apply saved theme before render to avoid flash-of-wrong-theme -->
+    <!-- Apply saved theme before render to avoid flash-of-wrong-theme.
+         theme modes: 'auto' (follow system), 'light', 'dark'. -->
     <script>
         (function () {
-            var theme = localStorage.getItem('flogr-theme');
-            if (theme === 'dark') { document.documentElement.setAttribute('data-bs-theme', 'dark'); }
+            var mode = localStorage.getItem('flogr-theme') || 'auto';
+            var theme = (mode === 'auto')
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : mode;
+            document.documentElement.setAttribute('data-bs-theme', theme);
         })();
     </script>
 </head>
 
 <body>
-    <nav class="bg-light border navbar navbar-expand-md navbar-light" data-role="appnav">
+    <nav class="border navbar navbar-expand-md" data-role="appnav">
         <div class="container-fluid">
             <a class="navbar-brand" href="/">fLOGr</a>
             <button aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation" class="navbar-toggler" data-bs-target="#navbar" data-bs-toggle="collapse" type="button">
@@ -42,7 +46,7 @@
                         <li class="nav-item"><a class="nav-link" href="/stats">Stats</a></li>
                         <li class="nav-item"><a class="nav-link" href="/garage">Garage</a></li>
                         <li class="nav-item"><a class="nav-link" href="/locations">Locations</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/account">Account</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
                     </ul>
                     <ul class="navbar-nav ms-auto mt-2">
                         <li class="nav-item"><a class="nav-link" href="/logout">Log Out</a></li>
@@ -93,23 +97,39 @@
     <script src="https://cdn.datatables.net/1.11.4/js/dataTables.bootstrap4.min.js"></script>
 
     <script>
-        // Light/dark theme toggle with localStorage persistence
+        // Theme control with three modes: auto (follow system), light, dark.
+        // The navbar button cycles auto -> light -> dark. Preference persists in
+        // localStorage ('flogr-theme'). In 'auto' mode the app follows the OS.
         document.addEventListener('DOMContentLoaded', function () {
             const html = document.documentElement;
             const btn = document.getElementById('themeToggle');
             if (!btn) return;
-            const update = function () {
-                const dark = html.getAttribute('data-bs-theme') === 'dark';
-                btn.textContent = dark ? '☀️' : '🌙';
-                btn.title = dark ? 'Switch to light theme' : 'Switch to dark theme';
-            };
+
+            let mode = localStorage.getItem('flogr-theme') || 'auto';
+
+            function currentSystemDark() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            function update() {
+                const theme = (mode === 'auto') ? (currentSystemDark() ? 'dark' : 'light') : mode;
+                html.setAttribute('data-bs-theme', theme);
+                btn.textContent = (mode === 'auto') ? '🖥️' : (theme === 'dark' ? '🌙' : '☀️');
+                btn.title = 'Theme: ' + mode + (mode === 'auto' ? ' (follow system)' : '') + ' — click to change';
+            }
+
             btn.addEventListener('click', function () {
-                const dark = html.getAttribute('data-bs-theme') === 'dark';
-                const next = dark ? 'light' : 'dark';
-                html.setAttribute('data-bs-theme', next);
-                localStorage.setItem('flogr-theme', next);
+                if (mode === 'auto') mode = 'light';
+                else if (mode === 'light') mode = 'dark';
+                else mode = 'auto';
+                localStorage.setItem('flogr-theme', mode);
                 update();
             });
+
+            // In 'auto' mode, react live to OS theme changes
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+                if (mode === 'auto') update();
+            });
+
             update();
         });
     </script>
