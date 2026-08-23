@@ -2,6 +2,7 @@ import os
 import sqlite3
 import csv
 import secrets
+import hashlib
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for, Response, jsonify
@@ -249,6 +250,29 @@ def migrate_locations():
 
 
 migrate_locations()
+
+
+def migrate_api_tokens():
+    """Ensure the api_tokens table exists on existing databases."""
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("""
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            token_name TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            scopes     TEXT NOT NULL DEFAULT 'read',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used  TIMESTAMP,
+            revoked    INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    raw.commit()
+    raw.close()
+
+
+migrate_api_tokens()
 
 
 def location_label(user_id, location_id):
@@ -1328,6 +1352,96 @@ def reports():
     return render_template("reports.html")
 
 
+# ---------------------------------------------------------------------------
+# API token management (Settings) + token-authenticated API
+# ---------------------------------------------------------------------------
+
+def hash_token(raw):
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@app.route("/settings/api_tokens", methods=["POST"])
+@login_required
+def create_api_token():
+    """Generate a new API token with chosen scopes."""
+    user_id = session["user_id"]
+    name = request.form.get("name", "").strip() or "API token"
+    scopes_raw = request.form.getlist("scopes")
+    scopes = ",".join(sorted(s.strip() for s in scopes_raw if s.strip())) or "read"
+
+    if not name:
+        flash("Token name is required.", "danger")
+        return redirect(url_for("settings"))
+
+    raw_token = f"flogr_{secrets.token_urlsafe(32)}"
+    db.execute(
+        "INSERT INTO api_tokens (user_id, token_name, token_hash, scopes) VALUES (?, ?, ?, ?)",
+        user_id, name, hash_token(raw_token), scopes)
+
+    # Show the raw token once (it won't be shown again)
+    flash(f"API token created: <code>{raw_token}</code> — copy now, it won't be shown again.", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/api/tokens/<int:token_id>/revoke", methods=["POST"])
+@login_required
+def revoke_api_token(token_id):
+    user_id = session["user_id"]
+    db.execute("UPDATE api_tokens SET revoked = 1 WHERE id = ? AND user_id = ?", token_id, user_id)
+    flash("API token revoked.", "success")
+    return redirect(url_for("settings"))
+
+
+def api_require_token(required_scope="read"):
+    """Authenticate a request via `Authorization: Bearer <token>`.
+    Returns the user_id if valid and scoped, else raises/returns None."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    raw = auth[7:].strip()
+    row = db.execute(
+        "SELECT id, user_id, scopes, revoked FROM api_tokens WHERE token_hash = ?",
+        hash_token(raw))
+    if not row or row[0]["revoked"]:
+        return None
+    # scope check: token must list required_scope (or have 'write')
+    token_scopes = set(s.strip() for s in (row[0]["scopes"] or "").split(","))
+    if required_scope not in token_scopes and "write" not in token_scopes:
+        return None
+    # update last_used
+    db.execute("UPDATE api_tokens SET last_used = datetime('now') WHERE id = ?", row[0]["id"])
+    return row[0]["user_id"]
+
+
+@app.route("/api/logs")
+def api_logs():
+    """Return the user's logs (authenticated). Requires 'logs' or 'write' scope."""
+    user_id = api_require_token("logs")
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+    logs = db.execute(
+        "SELECT * FROM log WHERE user_id = ? AND date != 'date' ORDER BY date DESC", user_id)
+    return jsonify([dict(l) for l in logs])
+
+
+@app.route("/api/locations")
+def api_locations():
+    user_id = api_require_token("locations")
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+    rows = db.execute("SELECT * FROM locations WHERE user_id = ? ORDER BY retailer, suburb", user_id)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/vehicles")
+def api_vehicles():
+    user_id = api_require_token("vehicles")
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+    rows = db.execute("SELECT * FROM vehicles WHERE user_id = ? ORDER BY registration", user_id)
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/garage")
 @login_required
 def garage():
@@ -1651,17 +1765,21 @@ def edit_vehicle(registration):
 @app.route("/settings")
 @login_required
 def settings():
-    """Settings page: appearance + account/security + data links"""
+    """Settings page: appearance + account/security + data links + API tokens"""
     user_id = session["user_id"]
     user = db.execute("SELECT * FROM users WHERE id = ?", user_id)[0]
     two_factor = bool(user.get("two_factor_enabled"))
     user_oidc = bool(int(user.get("oidc_enabled") or 0))
+    api_tokens = db.execute(
+        "SELECT id, token_name, scopes, created_at, last_used, revoked "
+        "FROM api_tokens WHERE user_id = ? ORDER BY id DESC", user_id)
     return render_template(
         "settings.html",
         user=user,
         two_factor=two_factor,
         user_oidc_enabled=user_oidc,
         oidc_globally_enabled=OIDC_REGISTERED,
+        api_tokens=api_tokens,
     )
 
 

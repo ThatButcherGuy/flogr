@@ -81,6 +81,25 @@ The `/settings` page (linked in the navbar when logged in) shows:
 - Two-Factor Authentication status — enable/disable
 - Login fallback order explanation
 - Quick-action buttons for enabling/disabling 2FA and logging in via Authentik
+- API Access — generate/revoke scoped API tokens for programmatic access
+
+---
+
+### API
+
+fLOGr exposes a **token-authenticated REST API** for programmatic access (e.g. an AI agent). Tokens are created and scoped from the **Settings → API Access** page.
+
+**Authentication:** send the token in the `Authorization` header:
+```
+Authorization: Bearer flogr_<token>
+```
+
+**Endpoints:**
+- `GET /api/logs` — the user's log entries (scope: `logs`)
+- `GET /api/locations` — the user's purchase locations (scope: `locations`)
+- `GET /api/vehicles` — the user's vehicles (scope: `vehicles`)
+
+**Scopes:** tokens are read-only by default. Each endpoint requires its named scope, or the token may carry `write` which grants access to all. Tokens are stored as SHA-256 hashes (the raw token is shown once at creation) and can be **revoked** from Settings at any time.
 
 ---
 
