@@ -52,8 +52,18 @@ Home
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="purchased_at" class="form-label">Purchased At</label>
-                            <input id="purchased_at" class="form-control" type="text" name="purchased_at" placeholder="Enter purchase location">
+                            <label for="location_id" class="form-label">Purchased At</label>
+                            <div class="input-group">
+                                <select id="location_id" class="form-control" name="location_id">
+                                    <option value="" selected>Select location…</option>
+                                    {% for loc in locations %}
+                                    <option value="{{ loc.id }}">{{ loc.retailer }} {{ loc.suburb }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-outline-secondary" id="addLocationBtn"
+                                    title="Add a new location" data-bs-toggle="modal" data-bs-target="#addLocationModal">+ New</button>
+                            </div>
+                            <small class="text-muted">Pick an existing location, or add a new one.</small>
                         </div>
                     </div>
                 </div>
@@ -93,6 +103,36 @@ Home
     </div>
 </div>
 
+<!-- Inline "Add new location" modal — separate from the log form so entering a
+     new location never clears values already typed into the record form. -->
+<div class="modal fade" id="addLocationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="addLocationForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Location</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="newRetailer" class="form-label">Retailer <span style="color:#dc3545">*</span></label>
+                        <input id="newRetailer" class="form-control" type="text" name="retailer" placeholder="e.g. Costco" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newSuburb" class="form-label">Suburb <span style="color:#dc3545">*</span></label>
+                        <input id="newSuburb" class="form-control" type="text" name="suburb" placeholder="e.g. Majura" required>
+                    </div>
+                    <div id="addLocationMsg" class="text-danger" style="font-size:small;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Location</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 // Populate default fuel type for vehicle selected
 document.getElementById('registration').addEventListener('change', function() {
@@ -123,6 +163,51 @@ textField.addEventListener('input', function() {
         charCountDisplay.style.color = 'red';
     } else {
         charCountDisplay.style.color = 'grey';
+    }
+});
+
+document.getElementById('addLocationForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const msg = document.getElementById('addLocationMsg');
+    msg.textContent = '';
+    const retailer = document.getElementById('newRetailer').value.trim();
+    const suburb = document.getElementById('newSuburb').value.trim();
+    if (!retailer || !suburb) { msg.textContent = 'Both retailer and suburb are required.'; return; }
+
+    const formData = new FormData();
+    formData.append('retailer', retailer);
+    formData.append('suburb', suburb);
+
+    try {
+        const resp = await fetch('/locations/add', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            msg.textContent = data.error || 'Could not add location.';
+            return;
+        }
+        // Add the (possibly newly created) location to the dropdown and select it
+        const select = document.getElementById('location_id');
+        const existingOpt = [...select.options].find(o => o.value === String(data.location_id));
+        if (existingOpt) {
+            existingOpt.selected = true;
+        } else {
+            const opt = document.createElement('option');
+            opt.value = data.location_id;
+            opt.textContent = data.label;
+            select.appendChild(opt);
+            opt.selected = true;
+        }
+        // Close the modal and clear its fields
+        bootstrap.Modal.getInstance(document.getElementById('addLocationModal')).hide();
+        document.getElementById('newRetailer').value = '';
+        document.getElementById('newSuburb').value = '';
+        // The rest of the log form is untouched — nothing was reset.
+    } catch (err) {
+        msg.textContent = 'Network error: ' + err.message;
     }
 });
 

@@ -46,6 +46,7 @@ CREATE TABLE log (
     registration VARCHAR(10) NOT NULL,
     receipt_number VARCHAR(50),
     purchased_at VARCHAR(50),
+    location_id INTEGER,
     litres DECIMAL(6,2) NOT NULL CHECK (litres >= 0),
     price_per_litre DECIMAL(5,3) NOT NULL CHECK (price_per_litre >= 0),
     sale_price DECIMAL(6,2) NOT NULL CHECK (sale_price >= 0),
@@ -54,6 +55,19 @@ CREATE TABLE log (
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (fuel_code) REFERENCES fuel_types(code),
     FOREIGN KEY (registration) REFERENCES vehicles(registration)
+);
+
+-- Create the locations table (user-managed purchase locations)
+-- retailer = e.g. 'Costco', suburb = e.g. 'Majura'  -> displays as "Costco Majura"
+-- Case-insensitive uniqueness is enforced in app.py (SQLite forbids LOWER() in
+-- UNIQUE constraints), so the DB-level constraint covers exact duplicates only.
+CREATE TABLE locations (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    retailer VARCHAR(100) NOT NULL,
+    suburb   VARCHAR(100) NOT NULL,
+    UNIQUE (user_id, retailer, suburb),
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 
