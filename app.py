@@ -172,10 +172,11 @@ def migrate_locations():
         return  # no legacy column to migrate
 
     distinct = db.execute("""
-        SELECT user_id, TRIM(purchased_at) AS value
-        FROM log
-        WHERE purchased_at IS NOT NULL AND TRIM(purchased_at) != ''
-        GROUP BY user_id, TRIM(purchased_at)
+        SELECT l.user_id, TRIM(l.purchased_at) AS value
+        FROM log l
+        INNER JOIN users u ON u.id = l.user_id
+        WHERE l.purchased_at IS NOT NULL AND TRIM(l.purchased_at) != ''
+        GROUP BY l.user_id, TRIM(l.purchased_at)
     """)
     for row in distinct:
         value = row["value"]
@@ -191,23 +192,30 @@ def migrate_locations():
             "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
             row["user_id"], retailer, suburb,
         )
-        if existing:
-            location_id = existing[0]["id"]
-        else:
-            db.execute(
-                "INSERT INTO locations (user_id, retailer, suburb) VALUES (?, ?, ?)",
-                row["user_id"], retailer, suburb,
-            )
-            location_id = db.execute(
-                "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
-                row["user_id"], retailer, suburb,
-            )[0]["id"]
+        try:
+            if existing:
+                location_id = existing[0]["id"]
+            else:
+                db.execute(
+                    "INSERT INTO locations (user_id, retailer, suburb) VALUES (?, ?, ?)",
+                    row["user_id"], retailer, suburb,
+                )
+                location_id = db.execute(
+                    "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
+                    row["user_id"], retailer, suburb,
+                )[0]["id"]
 
-        # Backfill log rows that still point at the raw text (no location yet)
-        db.execute(
-            "UPDATE log SET location_id = ? WHERE user_id = ? AND TRIM(purchased_at) = ? AND (location_id IS NULL OR location_id = '')",
-            location_id, row["user_id"], value,
-        )
+            # Backfill log rows that still point at the raw text (no location yet)
+            db.execute(
+                "UPDATE log SET location_id = ? WHERE user_id = ? AND TRIM(purchased_at) = ? AND (location_id IS NULL OR location_id = '')",
+                location_id, row["user_id"], value,
+            )
+        except ValueError:
+            # A single anomalous row (e.g. an orphaned FK) must not crash boot.
+            # Log and skip it; the app keeps running and other rows migrate.
+            print(f"[migrate_locations] WARNING: skipping un-migratable location "
+                  f"user={row['user_id']!r} value={value!r}")
+            continue
 
     raw.close()
 
