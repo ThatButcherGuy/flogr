@@ -70,6 +70,21 @@ CREATE TABLE locations (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- API tokens for programmatic access (e.g. the Hermes agent).
+-- We store only a SHA-256 hash of the raw token, never the token itself.
+-- 'scopes' is a comma-separated list e.g. "stats,logs,locations" or "+write".
+CREATE TABLE api_tokens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    token_name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    scopes     TEXT NOT NULL DEFAULT 'read',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used  TIMESTAMP,
+    revoked    INTEGER DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 
 INSERT INTO fuel_types (code, name) VALUES 
 ('DL', 'Diesel'),

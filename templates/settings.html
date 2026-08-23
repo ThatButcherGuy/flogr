@@ -129,6 +129,73 @@ Settings
     <a href="{{ url_for('login_oidc') }}" class="btn btn-outline-secondary">Log in with Authentik</a>
   {% endif %}
 </div>
+
+<!-- API Access / Tokens -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">API Access</h5>
+  </div>
+  <div class="card-body text-start">
+    <p class="text-muted">Generate a scoped token to allow programmatic access to your data (e.g. an AI agent). Tokens are shown <strong>once</strong> at creation.</p>
+
+    <form action="{{ url_for('create_api_token') }}" method="post" class="mb-3">
+      <div class="mb-2">
+        <label class="form-label" for="tok_name">Token name</label>
+        <input id="tok_name" name="name" class="form-control" placeholder="e.g. Hermes agent" required>
+      </div>
+      <div class="mb-2">
+        <label class="form-label d-block">Scopes</label>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="scopes" value="logs" id="sc_logs" checked>
+          <label class="form-check-label" for="sc_logs">Read logs</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="scopes" value="locations" id="sc_locations">
+          <label class="form-check-label" for="sc_locations">Read locations</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="scopes" value="vehicles" id="sc_vehicles">
+          <label class="form-check-label" for="sc_vehicles">Read vehicles</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="scopes" value="write" id="sc_write">
+          <label class="form-check-label" for="sc_write"><strong>Write</strong> (create/modify data)</label>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">Generate Token</button>
+    </form>
+
+    {% if api_tokens %}
+    <h6 class="mt-4">Active tokens</h6>
+    <table class="table table-sm table-striped">
+      <thead><tr><th>Name</th><th>Scopes</th><th>Created</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for t in api_tokens %}
+        <tr>
+          <td>{{ t.token_name }}</td>
+          <td><code>{{ t.scopes }}</code></td>
+          <td>{{ t.created_at[:10] if t.created_at else '' }}</td>
+          <td>
+            {% if t.revoked %}<span class="badge bg-secondary">Revoked</span>
+            {% else %}<span class="badge bg-success">Active</span>{% endif %}
+          </td>
+          <td>
+            {% if not t.revoked %}
+            <form action="{{ url_for('revoke_api_token', token_id=t.id) }}" method="post" class="d-inline"
+                  onsubmit="return confirm('Revoke this API token?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Revoke</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="text-muted small">No API tokens yet.</p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}
 
 {% block script %}
