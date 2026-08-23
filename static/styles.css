@@ -10,6 +10,7 @@
     --fl-blue: #0D3BE7;
     --fl-yellow: #F4E24A;
     --fl-red: #DC2229;
+    --fl-green: #3eef16;   /* fluro/lime green brand mark */
 }
 
 /* ---- Body & global ---- */
@@ -34,30 +35,62 @@ h1, h2, h3, h4, h5, h6 {
 nav[data-role="appnav"] {
     border-bottom: 1px solid rgba(127, 127, 127, 0.25);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    background-color: #ffffff;
+}
+[data-bs-theme="dark"] nav[data-role="appnav"] {
+    background-color: #1c1e21;
 }
 
 nav .navbar-brand {
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: 0.02em;
-    color: var(--fl-nav);
+    color: var(--fl-green);
 }
-
-[data-bs-theme="dark"] nav .navbar-brand {
-    color: #ffffff;
+nav .navbar-brand:hover {
+    color: var(--fl-green);
 }
 
 .navbar-nav .nav-link {
     font-weight: 500;
+    color: #3c4456;
+}
+[data-bs-theme="dark"] .navbar-nav .nav-link {
+    color: #d3d7de;
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--fl-blue);
+}
+[data-bs-theme="dark"] .navbar-nav .nav-link:hover {
+    color: var(--fl-yellow);
 }
 
 .navbar-nav .nav-link.active {
     color: var(--fl-blue);
     font-weight: 600;
 }
-
 [data-bs-theme="dark"] .navbar-nav .nav-link.active {
     color: var(--fl-yellow);
+}
+
+/* Navbar collapse menu links inherit their colour (readable in drop-down) */
+.navbar-collapse .navbar-nav .nav-link,
+.navbar-collapse .navbar-nav .nav-link.active {
+    color: inherit;
+}
+
+/* Navbar toggler icon: light for dark mode, dark for light mode */
+[data-bs-theme="dark"] .navbar-toggler {
+    border-color: rgba(255, 255, 255, 0.4);
+}
+[data-bs-theme="dark"] .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255,255,255,0.9%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+/* ---- Edit icons: invert in dark mode so they're visible ---- */
+[data-bs-theme="dark"] a img[alt="Edit"] {
+    filter: invert(0.9);
 }
 
 /* ---- Cards: the primary content container ---- */
@@ -194,4 +227,72 @@ nav .navbar-brand {
 /* ---- Footer spacing keeps it off the bottom ---- */
 footer {
     margin-top: 2rem;
+}
+
+/* ==========================================================================
+   Themed colour accents — less monochrome
+   ========================================================================== */
+
+/* Card headers get a subtle brand accent bar on top */
+.card > .card-header:first-child {
+    border-top: 3px solid var(--fl-blue);
+}
+[data-bs-theme="dark"] .card > .card-header:first-child {
+    border-top-color: var(--fl-yellow);
+}
+
+/* Stat card values take brand colour instead of plain navy/white */
+.stat-card .stat-value {
+    color: var(--fl-blue);
+}
+[data-bs-theme="dark"] .stat-card .stat-value {
+    color: var(--fl-yellow);
+}
+
+/* Primary CTA buttons: rich blue in light, yellow-on-dark accent */
+.btn-primary {
+    background-color: var(--fl-blue);
+    border-color: var(--fl-blue);
+}
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: #0a2fb8;
+    border-color: #0a2fb8;
+}
+
+/* Success / danger stay green / red but slightly brand-tinted */
+.btn-success {
+    background-color: #1f9d55;
+    border-color: #1f9d55;
+}
+.btn-success:hover {
+    background-color: #1a8649;
+    border-color: #1a8649;
+}
+
+/* Table header row: subtle accent underline */
+.table thead th {
+    color: var(--fl-blue);
+}
+[data-bs-theme="dark"] .table thead th {
+    color: var(--fl-yellow);
+}
+
+/* Active nav link gets an underline accent */
+.navbar-nav .nav-link.active {
+    border-bottom: 2px solid var(--fl-yellow);
+}
+[data-bs-theme="dark"] .navbar-nav .nav-link.active {
+    border-bottom-color: var(--fl-yellow);
+}
+
+/* Flash alerts */
+.alert-success {
+    border-left: 5px solid var(--fl-green);
+}
+.alert-danger {
+    border-left: 5px solid var(--fl-red);
+}
+.alert-warning {
+    border-left: 5px solid var(--fl-yellow);
 }

@@ -1,0 +1,170 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Settings
+{% endblock %}
+
+{% block main %}
+<h2>Settings</h2>
+<br>
+
+<!-- Appearance / Theme Card -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Appearance</h5>
+  </div>
+  <ul class="list-group list-group-flush text-start">
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Theme</strong><br><small class="text-muted">Choose how fLOGr looks</small></span>
+      <div class="btn-group" role="group" aria-label="Theme selection">
+        <button type="button" class="btn btn-sm btn-outline-secondary theme-mode" data-mode="light">☀️ Light</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary theme-mode" data-mode="dark">🌙 Dark</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary theme-mode" data-mode="auto">🖥️ Auto</button>
+      </div>
+    </li>
+    <li class="list-group-item">
+      <small class="text-muted">
+        <strong>Auto</strong> follows your device's system appearance. Your choice is saved and remembered.
+      </small>
+    </li>
+  </ul>
+</div>
+
+<!-- Data / Navigation Card -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Data</h5>
+  </div>
+  <ul class="list-group list-group-flush text-start">
+    <li class="list-group-item">
+      <div class="d-flex justify-content-between align-items-center">
+        <span><strong>Vehicles (Garage)</strong><br><small class="text-muted">Add, edit or remove your vehicles</small></span>
+        <a href="{{ url_for('garage') }}" class="btn btn-sm btn-primary">Go to Garage</a>
+      </div>
+    </li>
+    <li class="list-group-item">
+      <div class="d-flex justify-content-between align-items-center">
+        <span><strong>Purchase Locations</strong><br><small class="text-muted">Manage the list of fuel-purchase locations</small></span>
+        <a href="{{ url_for('locations') }}" class="btn btn-sm btn-primary">Manage Locations</a>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<!-- Account / Security Card -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Account &amp; Security</h5>
+  </div>
+  <ul class="list-group list-group-flush text-start">
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Username</strong><br><small class="text-muted">{{ user.username }}</small></span>
+    </li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><strong>Email</strong><br><small class="text-muted">{{ user.email }}</small></span>
+    </li>
+    {% if oidc_globally_enabled %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Authentik (OIDC Login)</strong><br>
+        <small class="text-muted">
+          {% if user_oidc_enabled %}
+            Enabled &mdash; use the Authentik button on the login page
+          {% else %}
+            Disabled &mdash; use password login instead
+          {% endif %}
+        </small>
+      </span>
+      <form action="{{ url_for('account_oidc_toggle') }}" method="post" class="d-inline">
+        <button type="submit" class="btn btn-sm {% if user_oidc_enabled %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+          {% if user_oidc_enabled %}Disable{% else %}Enable{% endif %}
+        </button>
+      </form>
+    </li>
+    {% else %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Authentik (OIDC Login)</strong><br>
+        <small class="text-muted">Not configured &mdash; local password login only</small>
+      </span>
+      <span class="badge bg-secondary rounded-pill">Unavailable</span>
+    </li>
+    {% endif %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        <strong>Two-Factor Authentication (TOTP)</strong><br>
+        <small class="text-muted">
+          {% if two_factor %}
+            Enabled &mdash; an authenticator app code is required after password login
+          {% else %}
+            Disabled &mdash; add an extra layer of security for password login
+          {% endif %}
+        </small>
+      </span>
+      <span>
+        {% if two_factor %}
+          <span class="badge bg-success rounded-pill">Enabled</span>
+        {% else %}
+          <span class="badge bg-secondary rounded-pill">Disabled</span>
+        {% endif %}
+      </span>
+    </li>
+  </ul>
+</div>
+
+<!-- Action Buttons -->
+<div class="d-flex justify-content-center gap-3 flex-wrap">
+  {% if two_factor %}
+    <form action="{{ url_for('disable_mfa') }}" method="post" class="d-inline">
+      <div class="mb-2">
+        <label for="disable_code" class="form-label visually-hidden">Current TOTP code to disable</label>
+        <input id="disable_code" name="code" class="form-control mx-auto" style="max-width:200px" autocomplete="one-time-code" inputmode="numeric" placeholder="Current TOTP code" required>
+      </div>
+      <button type="submit" class="btn btn-danger">Disable 2FA</button>
+    </form>
+  {% else %}
+    <a href="{{ url_for('account_mfa') }}" class="btn btn-primary">Enable Two-Factor Authentication</a>
+  {% endif %}
+  {% if oidc_globally_enabled and user_oidc_enabled %}
+    <a href="{{ url_for('login_oidc') }}" class="btn btn-outline-secondary">Log in with Authentik</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+<script>
+// Theme buttons on the Settings page set the same mode localStorage + apply
+document.addEventListener('DOMContentLoaded', function () {
+    const modeBtns = document.querySelectorAll('.theme-mode');
+    if (!modeBtns.length) return;
+    const html = document.documentElement;
+    const currentMode = localStorage.getItem('flogr-theme') || 'auto';
+
+    // mark the active mode button
+    modeBtns.forEach(function (b) {
+        if (b.getAttribute('data-mode') === currentMode) {
+            b.classList.remove('btn-outline-secondary');
+            b.classList.add('btn-primary');
+        }
+        b.addEventListener('click', function () {
+            const mode = this.getAttribute('data-mode');
+            localStorage.setItem('flogr-theme', mode);
+            // apply
+            if (mode === 'auto') {
+                const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                html.setAttribute('data-bs-theme', sysDark ? 'dark' : 'light');
+            } else {
+                html.setAttribute('data-bs-theme', mode);
+            }
+            modeBtns.forEach(function (x) { x.classList.remove('btn-primary'); x.classList.add('btn-outline-secondary'); });
+            this.classList.add('btn-primary');
+            this.classList.remove('btn-outline-secondary');
+            // sync the navbar button too
+            const navBtn = document.getElementById('themeToggle');
+            if (navBtn) navBtn.textContent = (mode === 'auto') ? '🖥️' : (mode === 'dark' ? '🌙' : '☀️');
+        });
+    });
+});
+</script>
+{% endblock %}
