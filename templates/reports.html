@@ -64,6 +64,24 @@ Reports
                         <canvas id="chartLocations" height="220"></canvas>
                     </div>
                 </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Fuel price history (avg $/L by year)</h6>
+                        <canvas id="chartPriceYear" height="220"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Monthly spend (last 12 months)</h6>
+                        <canvas id="chartMonthlySpend" height="220"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card stat-card h-100">
+                        <h6 class="stat-label mb-2">Vehicle comparison (economy + cost/100km)</h6>
+                        <canvas id="chartPerVehicle" height="220"></canvas>
+                    </div>
+                </div>
             </div>
 
             <div id="noData" class="alert alert-info mt-4 d-none">No data matches the selected filters.</div>
@@ -211,6 +229,24 @@ document.addEventListener('DOMContentLoaded', function () {
             data: { labels: [], datasets: [{ data: [], backgroundColor: ['#0D3BE7','#F4E24A','#1f9d55','#DC2229','#3eef16','#a85ad1','#a85ad1','#e67e22','#2980b9'] }] },
             options: { responsive: true, plugins: { legend: { position: 'right' } } }
         });
+        charts.priceYear = new Chart($('chartPriceYear'), {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Avg $/L by year', data: [], backgroundColor: 'rgba(31,157,85,0.6)' }] },
+            options: baseOpts('$/L')
+        });
+        charts.monthlySpend = new Chart($('chartMonthlySpend'), {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Spend ($)', data: [], backgroundColor: 'rgba(13,59,231,0.55)' }] },
+            options: baseOpts('$')
+        });
+        charts.perVehicle = new Chart($('chartPerVehicle'), {
+            type: 'bar',
+            data: { labels: [], datasets: [
+                { label: 'L/100km', data: [], backgroundColor: '#0D3BE7' },
+                { label: 'Cost/100km', data: [], backgroundColor: '#DC2229' }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true } } }
+        });
     }
 
     function updateCharts(logs) {
@@ -234,13 +270,42 @@ document.addEventListener('DOMContentLoaded', function () {
         charts.litres.update();
 
         // Locations: total spend per location
-        const byLoc = {};
-        logs.forEach(l => { const k = l.location || 'Unspecified'; byLoc[k] = (byLoc[k]||0)+l.sale_price; });
-        const locKeys = Object.keys(byLoc);
-        charts.locations.data.labels = locKeys;
-        charts.locations.data.datasets[0].data = locKeys.map(k => byLoc[k]);
-        charts.locations.update();
-    }
+                const byLoc = {};
+                logs.forEach(l => { const k = l.location || 'Unspecified'; byLoc[k] = (byLoc[k]||0)+l.sale_price; });
+                const locKeys = Object.keys(byLoc);
+                charts.locations.data.labels = locKeys;
+                charts.locations.data.datasets[0].data = locKeys.map(k => byLoc[k]);
+                charts.locations.update();
+
+                // Yearly avg price history
+                const byYear = {};
+                logs.forEach(l => { const k = l.date.slice(0,4); if(!byYear[k]) byYear[k]={s:0,n:0}; byYear[k].s+=l.price_per_litre; byYear[k].n++; });
+                const yKeys = Object.keys(byYear).sort();
+                charts.priceYear.data.labels = yKeys;
+                charts.priceYear.data.datasets[0].data = yKeys.map(k => +(byYear[k].s/byYear[k].n).toFixed(3));
+                charts.priceYear.update();
+
+                // Monthly spend (last 12 months)
+                const byMonthSpend = {};
+                logs.forEach(l => { const k=l.date.slice(0,7); byMonthSpend[k]=(byMonthSpend[k]||0)+l.sale_price; });
+                const msKeys = Object.keys(byMonthSpend).sort().slice(-12);
+                charts.monthlySpend.data.labels = msKeys;
+                charts.monthlySpend.data.datasets[0].data = msKeys.map(k => +(byMonthSpend[k]||0).toFixed(2));
+                charts.monthlySpend.update();
+
+                // Per-vehicle comparison
+                const byVeh = {};
+                logs.forEach(l => {
+                    const k = l.vehicle + ' (' + l.registration + ')';
+                    if(!byVeh[k]) byVeh[k] = { lpk:0, cost:0, litres:0, km:0, spend:0 };
+                    byVeh[k].litres += l.litres; byVeh[k].km += l.kilometres; byVeh[k].spend += l.sale_price;
+                });
+                const vKeys = Object.keys(byVeh);
+                charts.perVehicle.data.labels = vKeys;
+                charts.perVehicle.data.datasets[0].data = vKeys.map(k => { const v=byVeh[k]; return v.km ? +(v.litres/v.km*100).toFixed(2) : 0; });
+                charts.perVehicle.data.datasets[1].data = vKeys.map(k => { const v=byVeh[k]; return v.km ? +(v.spend/v.km*100).toFixed(2) : 0; });
+                charts.perVehicle.update();
+            }
 
     function baseOpts(yLabel) {
         return {

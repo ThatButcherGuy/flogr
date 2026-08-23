@@ -300,6 +300,14 @@ The **Last Fill** card block summarises the most recent log entry (date, days si
 
 The **Global Stats** table summarises all logs made by the user across all vehicles in their Garage (total spend, litres, distance, averages, and combined L/100km).
 
+The **Vehicle Comparison** section compares each vehicle's fuel economy (L/100km), cost per 100km, and average range per tank.
+
+The **Fuel Price History** section shows the average $/L per year, highlighting your cheapest and most expensive years.
+
+The **Location Insights** section shows your most-spent-at location and the cheapest average $/L location.
+
+The **Monthly Spend** section shows the last 12 months of total spend as a bar summary.
+
 The **Vehicles** table lists the vehicles in your Garage where the user can dive into more detailed statistics per vehicle.
 
 ### Reports
@@ -307,10 +315,13 @@ The **Vehicles** table lists the vehicles in your Garage where the user can dive
 The **Reports** page (linked in the navbar, and via "Open Reports &amp; Charts" on the Stats page) provides **interactive, graphical** analysis of your logs using Chart.js:
 
 - **Filters** — by vehicle, location, and a from/to date range. Charts and summary cards update instantly (client-side).
-- **Fuel economy (L/100km)** and **price-per-litre** over time (line charts)
+- **Fuel economy (L/100km)** and **price-per-litre** over time (monthly-aggregated line charts)
 - **Litres purchased** over time (bar chart)
 - **Spend by location** (doughnut chart)
-- **Summary cards** — total spend, litres, distance, average economy, average price
+- **Fuel price history** — average $/L by year (bar chart)
+- **Monthly spend** — last 12 months (bar chart)
+- **Vehicle comparison** — economy and cost/100km side by side (bar chart)
+- **Summary cards** — total spend, litres, distance, average economy, average price, avg cost/tank, cost per 100km
 
 Data is served from the `/api/stats` JSON endpoint.
 

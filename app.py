@@ -903,10 +903,10 @@ def stats():
         end_date_str = request.args.get('end_date', '')
         reg_filter = request.args.get('registration', '')
 
-        where = "user_id = ?"
+        where = "log.user_id = ?"
         params = [user_id]
         if reg_filter:
-            where += " AND registration = ?"
+            where += " AND log.registration = ?"
             params.append(reg_filter)
 
         # Validate/clamp dates. If invalid, ignore them (use all-time).
@@ -919,10 +919,10 @@ def stats():
             start_date_str = ''
             end_date_str = ''
         if start_date_str:
-            where += " AND date >= ?"
+            where += " AND log.date >= ?"
             params.append(start_date_str)
         if end_date_str:
-            where += " AND date <= ?"
+            where += " AND log.date <= ?"
             params.append(end_date_str)
 
         # Determine the effective date range for the UI (min/max in filtered set)
@@ -968,6 +968,88 @@ def stats():
         # Calculate GLobal Litres per 100km
         combined_litres_per_100km = (total_litres / total_kilometres) * 100 if total_kilometres else 0.0
 
+        # ---- Per-vehicle comparison (within the current filter) ----
+        # economy (L/100km), cost per 100km, avg range per tank, tank count
+        per_vehicle = db.execute(f"""
+            SELECT
+                log.registration,
+                vehicles.make,
+                vehicles.model,
+                vehicles.fuel_type,
+                COUNT(*) AS tank_count,
+                SUM(log.litres) AS tot_litres,
+                SUM(log.kilometres) AS tot_km,
+                SUM(log.sale_price) AS tot_spend
+            FROM log
+            LEFT JOIN vehicles ON vehicles.registration = log.registration AND vehicles.user_id = log.user_id
+            WHERE {where}
+            GROUP BY log.registration
+            ORDER BY log.registration
+            """, *params)
+        vehicle_comparison = []
+        for r in per_vehicle:
+            tot_km = r["tot_km"] or 0
+            tot_litres = r["tot_litres"] or 0
+            tot_spend = r["tot_spend"] or 0
+            n = r["tank_count"] or 0
+            vehicle_comparison.append({
+                "registration": r["registration"],
+                "make": r["make"] or "", "model": r["model"] or "",
+                "fuel": r["fuel_type"] or "",
+                "tank_count": n,
+                "lpk": (tot_litres / tot_km * 100) if tot_km else 0,
+                "cost_per_100km": (tot_spend / tot_km * 100) if tot_km else 0,
+                "avg_range_per_tank": (tot_km / n) if n else 0,
+            })
+
+        # ---- Fuel price history: yearly average $/L (respects filters) ----
+        price_by_year = db.execute(f"""
+            SELECT SUBSTR(date, 1, 4) AS yr,
+                   AVG(price_per_litre) AS avg_price,
+                   COUNT(*) AS n
+            FROM log
+            WHERE {where} AND price_per_litre > 0
+            GROUP BY SUBSTR(date, 1, 4)
+            ORDER BY yr
+            """, *params)
+        price_history = [{"year": r["yr"], "avg_price": round(r["avg_price"], 3), "n": r["n"]} for r in price_by_year]
+
+        # Best / worst price year
+        best_price_year = min(price_history, key=lambda x: x["avg_price"]) if price_history else {}
+        worst_price_year = max(price_history, key=lambda x: x["avg_price"]) if price_history else {}
+
+        # ---- Location insights (within filter): top by spend + cheapest avg $/L ----
+        loc_rows = db.execute(f"""
+            SELECT
+                COALESCE(locations.retailer, log.purchased_at, 'Unspecified') AS loc_label,
+                COUNT(log.id) AS n,
+                SUM(log.sale_price) AS spend,
+                AVG(log.price_per_litre) AS avg_price
+            FROM log
+            LEFT JOIN locations ON locations.id = log.location_id
+            WHERE {where} AND (log.price_per_litre > 0 OR log.sale_price > 0)
+            GROUP BY loc_label
+            """, *params)
+        location_snapshot = [dict(r) for r in loc_rows]
+        top_location = max(location_snapshot, key=lambda x: x["spend"] or 0) if location_snapshot else {}
+        cheapest_locations = sorted(
+            [x for x in location_snapshot if (x["avg_price"] or 0) > 0 and x["n"] >= 2],
+            key=lambda x: x["avg_price"])
+
+        # ---- Monthly spend trend (last 12 months, for a compact chart) ----
+        monthly_spend = db.execute(f"""
+            SELECT SUBSTR(date, 1, 7) AS month,
+                   SUM(sale_price) AS spend,
+                   COUNT(*) AS n
+            FROM log
+            WHERE {where}
+            GROUP BY SUBSTR(date, 1, 7)
+            ORDER BY month DESC
+            LIMIT 12
+            """, *params)
+        monthly_trend = [{"month": r["month"], "spend": round(float(r["spend"] or 0), 2), "n": r["n"]} for r in monthly_spend]
+        monthly_trend.reverse()  # ascending
+
         return render_template("stats.html",
                                vehicles=vehicles,
                                last_log=last_log,
@@ -989,7 +1071,14 @@ def stats():
                                cost_per_100km=cost_per_100km,
                                avg_cost_per_tank=avg_cost_per_tank,
                                best_lpk=best_lpk,
-                               worst_lpk=worst_lpk)
+                               worst_lpk=worst_lpk,
+                               per_vehicle=vehicle_comparison,
+                               price_history=price_history,
+                               best_price_year=best_price_year,
+                               worst_price_year=worst_price_year,
+                               top_location=top_location,
+                               cheapest_locations=cheapest_locations,
+                               monthly_trend=monthly_trend)
 
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
