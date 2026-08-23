@@ -53,3 +53,10 @@ tbody tr:nth-of-type(odd) {
 .lowercase {
     text-transform: lowercase;
 }
+
+/* Red asterisk to denote mandatory form fields */
+.form-label.req::after {
+    content: " *";
+    color: #dc3545;
+    font-weight: 700;
+}

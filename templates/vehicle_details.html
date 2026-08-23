@@ -14,7 +14,7 @@ Vehicle Details for {{ vehicle.registration }}
         <li class="list-group-item"><strong>Make:</strong> {{ vehicle.make }}</li>
         <li class="list-group-item"><strong>Model:</strong> {{ vehicle.model }}</li>
         <li class="list-group-item"><strong>Year:</strong> {{ vehicle.year }}</li>
-        <li class="list-group-item"><strong>Odometer:</strong> {{ vehicle.odometer }}</li>
+        <li class="list-group-item"><strong>Odometer:</strong> {{ "{:,.0f}".format(vehicle.odometer) }} km</li>
     </ul>
     <br>
     <a class="btn btn-primary" href="{{ url_for('garage') }}">Back to Garage</a>
