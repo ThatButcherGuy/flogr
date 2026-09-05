@@ -6,13 +6,13 @@ import hashlib
 import json
 import logging
 import time
+from datetime import date, datetime, timedelta
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for, Response, jsonify
 from flask_session import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 from email_validator import validate_email, EmailNotValidError
-from datetime import date, datetime
 from io import StringIO
 
 from helpers import login_required, get_or_create_user
@@ -1178,6 +1178,25 @@ def _avg_days_between_dates(dates):
     return round(sum(diffs) / len(diffs), 1)
 
 
+# Quick filter presets: key -> (label, days-ago start, end) resolved relative to today.
+def _resolve_period(period, today):
+    """Resolve a quick-filter preset to an (inclusive start, end) ISO date string
+    pair, or (None, None) for 'all'. 'today' is a date object."""
+    d = {
+        "7d": ("Last 7 days", today - timedelta(days=6), today),
+        "30d": ("Last 30 days", today - timedelta(days=29), today),
+        "90d": ("Last 90 days", today - timedelta(days=89), today),
+        "12m": ("Last 12 months", today - timedelta(days=364), today),
+        "ytd": ("Year to date", date(today.year, 1, 1), today),
+        # Australian financial year: 1 July – 30 June.
+        "fy": ("Financial year (AU)", date(today.year if today.month >= 7 else today.year - 1, 7, 1), today),
+    }
+    if period not in d:
+        return None, None, "All time"
+    label, start, end = d[period]
+    return start.isoformat(), end.isoformat(), label
+
+
 @app.route("/stats")
 @login_required
 def stats():
@@ -1244,6 +1263,15 @@ def stats():
         start_date_str = request.args.get('start_date', '')
         end_date_str = request.args.get('end_date', '')
         reg_filter = request.args.get('registration', '')
+        period = request.args.get('period', '')
+
+        # Apply a quick-date preset if one is selected (overrides manual dates).
+        preset_date_label = None
+        if period:
+            p_start, p_end, p_label = _resolve_period(period, date.today())
+            if p_start:
+                start_date_str, end_date_str = p_start, p_end
+                preset_date_label = p_label
 
         where = "log.user_id = ?"
         params = [user_id]
@@ -1379,7 +1407,8 @@ def stats():
         best_price_year = min(price_history, key=lambda x: x["avg_price"]) if price_history else {}
         worst_price_year = max(price_history, key=lambda x: x["avg_price"]) if price_history else {}
 
-        # ---- Location insights (within filter): top by spend + cheapest avg $/L ----
+        # ---- Location insights (within filter): top by spend, cheapest/$$ avg,
+        #      most frequent, and best-economy location ----
         loc_rows = db.execute(f"""
             SELECT
                 COALESCE(locations.retailer, log.purchased_at, 'Unspecified') AS loc_label,
@@ -1396,6 +1425,35 @@ def stats():
         cheapest_locations = sorted(
             [x for x in location_snapshot if (x["avg_price"] or 0) > 0 and x["n"] >= 2],
             key=lambda x: x["avg_price"])
+        expensive_locations = sorted(
+            [x for x in location_snapshot if (x["avg_price"] or 0) > 0 and x["n"] >= 1],
+            key=lambda x: x["avg_price"], reverse=True)
+        most_frequent_location = max(
+            location_snapshot, key=lambda x: x["n"] or 0) if location_snapshot else {}
+        distinct_locations = len(location_snapshot) if location_snapshot else 0
+
+        # Best-economy location: lowest average L/100km on FULL tanks (min 2 fills)
+        loc_econ = db.execute(f"""
+            SELECT
+                COALESCE(locations.retailer, log.purchased_at, 'Unspecified') AS loc_label,
+                SUM(log.litres) AS lit,
+                SUM(log.kilometres) AS km,
+                COUNT(log.id) AS n
+            FROM log
+            LEFT JOIN locations ON locations.id = log.location_id
+            WHERE {where} AND partial_tank = 0 AND kilometres > 0
+            GROUP BY loc_label
+        """, *params)
+        loc_econ_list = []
+        for r in loc_econ:
+            lit, km, n = r["lit"] or 0, r["km"] or 0, r["n"] or 0
+            if km and n >= 2:
+                loc_econ_list.append({
+                    "loc_label": r["loc_label"],
+                    "n": n,
+                    "avg_lpk": round(lit / km * 100, 2),
+                })
+        best_economy_location = min(loc_econ_list, key=lambda x: x["avg_lpk"]) if loc_econ_list else {}
 
         # ---- Monthly spend trend (last 12 months, for a compact chart) ----
         monthly_spend = db.execute(f"""
@@ -1421,11 +1479,30 @@ def stats():
         ]
         avg_days_per_tank = _avg_days_between_dates(fill_dates)
 
+        # ---- Filter context label (shown under the page heading) ----
+        pieces = []
+        if reg_filter:
+            pieces.append(f"vehicle {reg_filter}")
+        if preset_date_label:
+            pieces.append(f"date: {preset_date_label}")
+        elif start_date_str or end_date_str:
+            if start_date_str and end_date_str:
+                pieces.append(f"date: {start_date_str} → {end_date_str}")
+            elif start_date_str:
+                pieces.append(f"date: from {start_date_str}")
+            elif end_date_str:
+                pieces.append(f"date: to {end_date_str}")
+        filter_context = (" · ".join(pieces)) if pieces else "All time · all vehicles"
+        active_period = period  # for highlighting the active quick-filter pill
+
         return render_template("stats.html",
                                vehicles=vehicles,
                                last_log=last_log,
                                username=username,
                                reg_filter=reg_filter,
+                               active_period=active_period,
+                               filter_context=filter_context,
+                               preset_date_label=preset_date_label,
                                start_date=start_date_str,
                                end_date=end_date_str,
                                min_date=range_res[0]["min_d"] if range_res and range_res[0]["min_d"] else date.today().isoformat(),
@@ -1449,6 +1526,10 @@ def stats():
                                worst_price_year=worst_price_year,
                                top_location=top_location,
                                cheapest_locations=cheapest_locations,
+                               expensive_locations=expensive_locations,
+                               most_frequent_location=most_frequent_location,
+                               distinct_locations=distinct_locations,
+                               best_economy_location=best_economy_location,
                                monthly_trend=monthly_trend,
                                avg_days_per_tank=avg_days_per_tank)
 
