@@ -485,12 +485,29 @@ def user_locations(user_id):
 
 def resolve_log_locations(logs, user_id):
     """Override each log's purchased_at with the LIVE location label so renames
-    propagate to displayed views. Rows without a location keep their stored text."""
+    propagate to displayed views. Rows without a location keep their stored text.
+
+    Batched: issues ONE query for all referenced locations (not one per row)
+    so large log sets don't cause an N+1 query bottleneck.
+    """
+    if not logs:
+        return logs
+    # Collect the distinct location_ids referenced by these rows.
+    ids = {log.get("location_id") for log in logs if log.get("location_id")}
+    if not ids:
+        return logs
+    placeholders = ",".join("?" * len(ids))
+    rows = db.execute(
+        f"SELECT id, retailer, suburb FROM locations WHERE user_id = ? AND id IN ({placeholders})",
+        user_id, *ids,
+    )
+    label_map = {
+        r["id"]: f"{r['retailer']} {r['suburb']}".strip()
+        for r in rows
+    }
     for log in logs:
-        if log.get("location_id"):
-            label = location_label(user_id, log["location_id"])
-            if label:
-                log["purchased_at"] = label
+        if log.get("location_id") and label_map.get(log["location_id"]):
+            log["purchased_at"] = label_map[log["location_id"]]
     return logs
 
 # -------------------------
@@ -908,12 +925,14 @@ def view_log():
             FROM log
             WHERE user_id = ?
             AND registration = ?
+            ORDER BY date DESC
             """, user_id, selected_registration)
     else:
         logs = db.execute("""
             SELECT *
             FROM log
             WHERE user_id = ?
+            ORDER BY date DESC
             """, user_id,)
 
     # Calculate Litres/100km

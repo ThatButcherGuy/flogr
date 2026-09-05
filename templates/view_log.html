@@ -103,10 +103,10 @@ $(document).ready( function () {
                         <td>{{ log['fuel_code'] }}</td>
                         <td>{{ log['receipt_number'] }}</td>
                         <td>{{ log['purchased_at'] }}</td>
-                        <td>{{ log['litres'] }}</td>
-                        <td>{{ log['price_per_litre'] }}</td>
-                        <td>{{ log['sale_price'] }}</td>
-                        <td>{{ log['kilometres'] }}</td>
+                        <td data-sort="{{ log['litres'] }}">{{ "{:,.2f}".format(log['litres']) }}</td>
+                        <td data-sort="{{ log['price_per_litre'] }}">${{ "{:,.3f}".format(log['price_per_litre']) }}</td>
+                        <td data-sort="{{ log['sale_price'] }}">${{ "{:,.2f}".format(log['sale_price']) }}</td>
+                        <td data-sort="{{ log['kilometres'] }}">{{ "{:,.0f}".format(log['kilometres']) }}</td>
                         <td data-sort="{{ log['litres_per_100km'] if not log.get('partial_tank') else 9999 }}">
                             {% if log.get('partial_tank') %}
                                 <span class="badge bg-warning text-dark" title="Partial top-up — excluded from fuel-economy stats">Partial</span>
