@@ -39,6 +39,7 @@ services:
       - DATABASE_PATH=/flask-app/data/flogr.db
       - PUID=568
       - PGID=568
+      - SECRET_KEY=change-me-to-a-long-random-value   # REQUIRED for production
       - LOG_LEVEL=INFO            # DEBUG / INFO / WARNING / ERROR
       # - LOG_FORMAT=json         # uncomment for structured (JSON) logs
       # Optional: Authentik OIDC SSO
