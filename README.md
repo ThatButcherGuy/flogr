@@ -102,7 +102,9 @@ For each record fLOGr calculates **sale price** (`litres × price/L`) and **L/10
 
 ### View Log
 
-All your records, newest first. Sortable by any column and filterable by vehicle. From here you can **edit** or **delete** entries (odometer adjusts automatically).
+All your records, newest first. Sortable by any column, searchable, and filterable by vehicle. From here you can **edit** or **delete** entries (odometer adjusts automatically), and **Export CSV** for all records or the selected vehicle.
+
+The page uses **server-side paging** — it loads instantly and fetches one page of records at a time, so it stays responsive even with thousands of entries.
 
 ### Locations
 
@@ -114,13 +116,14 @@ Your vehicles (registration, type, make/model, year, odometer). Add, edit or del
 
 ### Stats
 
-A read-only **numbers** overview of your logs:
+A read-only **numbers** overview of your logs, fully driven by the **filter bar** at the top (vehicle, a custom date range, or a **quick period** — All / 7 / 30 / 90 days / 12 months / YTD / Financial year (AU)). A banner shows exactly what's being viewed (e.g. *"vehicle ABC · date: Year to date"*):
 
-- **Summary cards** — total spend, litres, distance, combined L/100km, cost/100km, avg cost/tank, best/worst economy.
-- **Last Fill** — your most recent entry, days since, economy, price, cost, location, and **avg days / tank**.
-- **Global Stats** — totals and averages across all vehicles, plus **Average days per tank**.
+- **Trend vs Previous Period** — when a date filter is active, compares this period against the equivalent prior window (total spend %, economy L/100km change, distance %, avg days/tank) with green/red change badges.
+- **Summary cards** — total spend, litres, distance, combined L/100km, cost/100km, avg cost/tank, best/worst economy (label-above-value).
+- **Most Recent Fill** — your latest entry, days since, economy, price, cost, location, and **avg days / tank**.
+- **Summary table** — totals and averages across the filtered set, plus **Average days per tank**.
 - **Vehicle Comparison** — each vehicle's economy, cost/100km, and range per tank.
-- **Location Insights** — your most-spent-at location and the cheapest average $/L location.
+- **Location Insights** — most spent at, most frequent, cheapest & most expensive avg $/L, best-economy location, and distinct location count in the period.
 - **Vehicles** — links to per-vehicle statistics.
 
 All figures use thousands separators, and dollar values include `$`.
@@ -131,7 +134,7 @@ Click a vehicle's registration on the Stats page (or Garage). Shows vehicle deta
 
 ### Reports & Charts
 
-The interactive, graphical analysis hub (also via **"Open Reports & Charts"** on the Stats page). Filter by vehicle, location, and date range — charts and summary cards update instantly, client-side:
+The interactive, graphical analysis hub (also via **"Open Reports & Charts"** on the Stats page). Filter by vehicle, location, a custom date range, or a **quick period** (All / 7 / 30 / 90 days / 12 months / YTD / Financial year (AU)) — charts and summary cards update instantly, client-side:
 
 - Fuel economy (L/100km) and price/L over time (monthly line charts)
 - Litres purchased over time (bar)
