@@ -18,6 +18,10 @@ services:
       - PUID=568
       - PGID=568
       - TZ=Australia/Canberra
+      # Logging: control verbosity ('DEBUG'/'INFO'/'WARNING'/'ERROR'; default INFO).
+      # LOG_FORMAT=json emits structured one-per-line JSON to stdout for parsers.
+      - LOG_LEVEL=INFO
+      # - LOG_FORMAT=json
       # Optional: Authentik OIDC — set these to enable SSO login
       # - AUTHENTIK_CLIENT_ID=********
       # - AUTHENTIK_CLIENT_SECRET=********
@@ -40,6 +44,11 @@ fLOGr has been developed by Brenden Taylor (GitHub user: ThatButcherGuy) as the 
 ### Theming & Branding
 
 - **Light / dark / auto themes** — the navbar 🌙/☀️/🖥️ toggle cycles Light, Dark and Auto (follows your system). Manage it from **Settings**. Your choice is saved in `localStorage` (`flogr-theme`) and remembered across sessions; the saved theme is applied before page render to avoid a flash of the wrong theme.
+
+### Logging & Audit
+
+- **Container logging** — the app logs to stdout (captured by `docker logs flogr`), alongside Gunicorn's access/error streams. Set `LOG_LEVEL` (default `INFO`, use `DEBUG` to debug) and optionally `LOG_FORMAT=json` for structured, one-per-line JSON for log viewers/dashboards. Every request is logged with method, path, status, user ID, source IP and duration.
+- **Activity / Audit log** — **Settings → Activity Log** records a per-user, immutable trail of data and account changes kept indefinitely for troubleshooting and traceability. Fuel-log entries capture full before/after field diffs (create/edit/delete); locations, vehicles, API tokens and auth events (login, failed login, logout, registration) are summarised. Each user sees only their own entries.
 
 ---
 

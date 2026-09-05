@@ -3,6 +3,9 @@ import sqlite3
 import csv
 import secrets
 import hashlib
+import json
+import logging
+import time
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, url_for, Response, jsonify
@@ -50,6 +53,62 @@ app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
 # -------------------------
+# Logging configuration
+# -------------------------
+# The app logs to stdout so it is captured by the Docker container logs
+# (`docker logs flogr`). Level is controlled by LOG_LEVEL (default INFO,
+# use DEBUG while debugging). LOG_FORMAT=json produces structured logs for
+# parsing by log viewers/dashboards; plain (default) is human-readable.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FORMAT = os.getenv("LOG_FORMAT", "plain").lower()
+
+
+class _JsonFormatter(logging.Formatter):
+    """Emit one JSON object per line for machine-parseable log collection."""
+
+    def format(self, record):
+        entry = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            entry["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+
+def _setup_logging():
+    handler = logging.StreamHandler()
+    if LOG_FORMAT == "json":
+        handler.setFormatter(_JsonFormatter())
+    else:
+        handler.setFormatter(
+            logging.Formatter(
+                "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S%z",
+            )
+        )
+    root = logging.getLogger()
+    # Some libraries (e.g. certain WSGI/Flask deps) call basicConfig() and leave
+    # a root handler behind, which would double-print every record. Clear any
+    # existing root handlers so we own the output format exactly once.
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    root.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    root.addHandler(handler)
+    # Werkzeug ships its own per-request access log lines; we log requests
+    # ourselves (with user + duration) so silence Werkzeug's to avoid dupes.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    return logging.getLogger("flogr")
+
+
+logger = _setup_logging()
+# Route Flask's app logger lines through the same config (records propagate
+# to the root logger).
+app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+
+# -------------------------
 # Authentik OIDC configuration
 # -------------------------
 AUTHENTIK_CLIENT_ID = os.getenv("AUTHENTIK_CLIENT_ID", "")
@@ -94,7 +153,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 
 # Create DB file if it doesn't exist
 if not os.path.exists(DB_PATH):
-    print(f"Creating new SQLite database at {DB_PATH}")
+    logger.info("Creating new SQLite database at %s", DB_PATH)
     sqlite3.connect(DB_PATH).close()
 
 # Apply SQLite PRAGMAs
@@ -121,7 +180,7 @@ tables = db.execute(
 # Initialize empty database from schema BEFORE running any migrations so
 # the users table exists for the ALTER/UPDATE statements below.
 if not tables:
-    print("Database is empty — initializing from schema.sql")
+    logger.info("Database is empty — initializing from schema.sql")
     if not os.path.exists(SCHEMA_PATH):
         raise FileNotFoundError(f"Schema file not found: {SCHEMA_PATH}")
 
@@ -133,9 +192,9 @@ if not tables:
         conn = sqlite3.connect(DB_PATH)
         conn.executescript(sql_statements)
         conn.close()
-        print("Database initialized successfully from schema.sql")
+        logger.info("Database initialized successfully from schema.sql")
     except sqlite3.Error as e:
-        print(f"Error initializing database: {e}")
+        logger.error("Error initializing database: %s", e)
         exit(1)
 
 for column in ["two_factor_secret", "two_factor_enabled", "recovery_codes", "oidc_enabled"]:
@@ -246,8 +305,8 @@ def migrate_locations():
         except ValueError:
             # A single anomalous row (e.g. an orphaned FK) must not crash boot.
             # Log and skip it; the app keeps running and other rows migrate.
-            print(f"[migrate_locations] WARNING: skipping un-migratable location "
-                  f"user={row['user_id']!r} value={value!r}")
+            logger.warning("migrate_locations: skipping un-migratable location user=%r value=%r",
+                           row["user_id"], value)
             continue
 
     raw.close()
@@ -277,6 +336,128 @@ def migrate_api_tokens():
 
 
 migrate_api_tokens()
+
+
+def migrate_audit_log():
+    """Ensure the audit_log table exists on existing databases (schema.sql
+    creates it for fresh DBs)."""
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            action      TEXT NOT NULL,
+            entity_type TEXT,
+            entity_id   INTEGER,
+            details     TEXT,
+            ip_address  TEXT,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    raw.commit()
+    raw.close()
+
+
+migrate_audit_log()
+
+
+# -------------------------
+# Audit log + request helpers
+# -------------------------
+def client_ip():
+    """Best-effort client IP. Behind a reverse proxy the real client is the
+    first value of X-Forwarded-For; fall back to the socket peer."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or ""
+
+
+def _log_label(row):
+    """Human-readable label for a log entry, for audit summaries."""
+    reg = row.get("registration") or "?"
+    km = row.get("kilometres")
+    litres = row.get("litres")
+    if km is not None and litres is not None:
+        return f"{reg} on {row.get('date')} ({litres} L / {km} km)"
+    return f"{reg} on {row.get('date')}"
+
+
+# Columns stored on a fuel-log record (used for audit "removed" snapshots).
+LOG_FIELDS = [
+    "user_id", "fuel_code", "date", "registration", "receipt_number",
+    "purchased_at", "location_id", "litres", "price_per_litre", "sale_price",
+    "kilometres", "comments", "partial_tank",
+]
+
+
+def _diff_fields(before, after):
+    """Return {field: {'from': old, 'to': new}} for values that changed.
+
+    Dates may appear as either Python `date` objects or strings depending on
+    the source; normalize both to strings before comparing so a value that
+    only changed representation isn't reported as a real diff.
+    """
+    changed = {}
+    keys = set(before) | set(after)
+    for k in sorted(keys):
+        b, a = before.get(k), after.get(k)
+        if isinstance(b, date):
+            b = str(b)
+        if isinstance(a, date):
+            a = str(a)
+        if b == a:
+            continue
+        changed[k] = {"from": b, "to": a}
+    return changed
+
+
+def _diff_summary(changed):
+    return "; ".join(f"{k}: {v['from']} → {v['to']}" for k, v in changed.items())
+
+
+# Human-readable labels for audit actions (shown in Settings → Activity Log).
+ACTION_LABELS = {
+    "auth.register": "Account registered",
+    "auth.login": "Signed in",
+    "auth.login_failed": "Failed sign-in attempt",
+    "auth.logout": "Signed out",
+    "log.create": "Log entry added",
+    "log.update": "Log entry edited",
+    "log.delete": "Log entry deleted",
+    "location.create": "Location added",
+    "location.update": "Location edited",
+    "location.delete": "Location deleted",
+    "vehicle.create": "Vehicle added",
+    "vehicle.update": "Vehicle edited",
+    "vehicle.delete": "Vehicle deleted",
+    "api_token.create": "API token created",
+    "api_token.revoke": "API token revoked",
+    "account.oidc_toggle": "Authentik login toggled",
+    "account.mfa_enrolled": "Two-factor authentication enabled",
+    "account.mfa_disabled": "Two-factor authentication disabled",
+}
+
+
+def record_audit(action, entity_type=None, entity_id=None, details=None, user_id=None):
+    """Write an immutable entry into the audit log.
+
+    user_id defaults to the logged-in user (session). Pass it explicitly for
+    events that occur outside a session (e.g. registration, failed login).
+    `details` is a dict that is stored as JSON.
+    """
+    uid = user_id if user_id is not None else session.get("user_id")
+    if uid is None:
+        return
+    db.execute(
+        "INSERT INTO audit_log "
+        "(user_id, action, entity_type, entity_id, details, ip_address) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        uid, action, entity_type, entity_id,
+        json.dumps(details) if details else None,
+        client_ip(),
+    )
 
 
 def location_label(user_id, location_id):
@@ -315,16 +496,37 @@ def resolve_log_locations(logs, user_id):
 # -------------------------
 # Debug: verify tables
 # -------------------------
-print("Tables in DB:", db.execute(
+logger.info("Tables in DB: %s", db.execute(
     "SELECT name FROM sqlite_master WHERE type='table';"
 ))
 
+@app.before_request
+def _start_request_timer():
+    request._flogr_start = time.perf_counter()
+
+
 @app.after_request
 def after_request(response):
-    """Ensure responses aren't cached"""
+    """Ensure responses aren't cached; log the request for debugging."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Expires"] = 0
     response.headers["Pragma"] = "no-cache"
+
+    # Skip static asset noise in the request log.
+    if request.path.startswith("/static"):
+        return response
+
+    start = getattr(request, "_flogr_start", time.perf_counter())
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    logger.info(
+        "request method=%s path=%s status=%s user=%s source=%s duration_ms=%.1f",
+        request.method,
+        request.path,
+        response.status_code,
+        session.get("user_id"),
+        client_ip(),
+        duration_ms,
+    )
     return response
 
 
@@ -343,13 +545,11 @@ def login():
         # Ensure username was submitted
         if not username:
             flash('Pease enter a username.', 'danger')
-            print('Please enter a username.')
             return redirect(url_for("login"))
 
         # Ensure password was submitted
         elif not password:
             flash('Incorrect password.', 'danger')
-            print('Incorrect password.')
             return redirect(url_for("login"))
 
         # Query database for username
@@ -361,8 +561,17 @@ def login():
 
         # Ensure username exists and password is correct
         if len(rows) != 1 or not check_password_hash(rows[0]["password_hash"], password):
+            logger.info("Login failed for username=%r", username)
+            # Only record an audit trail when the username maps to a real
+            # account (wrong password). Unknown usernames can't be tied to a
+            # user row and are already captured in the request log.
+            if len(rows) == 1:
+                record_audit(
+                    "auth.login_failed",
+                    details={"username": rows[0]["username"], "method": "password"},
+                    user_id=rows[0]["id"],
+                )
             flash('Invalid username or password.', 'danger')
-            print('Invalid username or password.')
             return redirect(url_for("login"))
 
         user_id = rows[0]["id"]
@@ -371,6 +580,7 @@ def login():
             session["temp_user_id"] = user_id
             return redirect(url_for("mfa_challenge", next=url_for("index")))
         session["user_id"] = user_id
+        record_audit("auth.login", details={"method": "password"})
         db.execute(
             "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
             user_id,
@@ -385,7 +595,10 @@ def login():
 @app.route("/logout")
 def logout():
     """Log user out"""
-
+    # Capture before clearing so we can audit who logged out.
+    uid = session.get("user_id")
+    if uid is not None:
+        record_audit("auth.logout", details={"method": "manual"}, user_id=uid)
     # Forget any user_id
     session.clear()
 
@@ -439,6 +652,7 @@ def login_oidc_callback():
 
     session.clear()
     session["user_id"] = user["id"]
+    record_audit("auth.login", details={"method": "oidc"})
     db.execute(
         "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", user["id"]
     )
@@ -495,7 +709,9 @@ def register():
                 FROM users
                 WHERE username = ?
                 """, username)
-            session["user_id"] = rows[0]["id"]
+            user_id = rows[0]["id"]
+            session["user_id"] = user_id
+            record_audit("auth.register", user_id=user_id)
 
             return redirect("/add_vehicle")
 
@@ -641,6 +857,30 @@ def new_record():
             AND user_id = ?
             """, odometer, registration, user_id)
 
+        log_id = db.execute("SELECT last_insert_rowid() AS id")[0]["id"]
+        record_audit(
+            "log.create",
+            entity_type="log",
+            entity_id=log_id,
+            details={
+                "summary": f"Added {_log_label({'registration': registration, 'date': log_date, 'litres': litres, 'kilometres': kilometres})}",
+                "fields": {
+                    "registration": registration,
+                    "date": str(log_date),
+                    "fuel_code": fuel_code,
+                    "receipt_number": receipt_number,
+                    "location_id": location_id,
+                    "litres": litres,
+                    "price_per_litre": price_per_litre,
+                    "sale_price": sale_price,
+                    "kilometres": kilometres,
+                    "partial_tank": partial_tank,
+                },
+                "vehicle_odometer_after": odometer,
+            },
+            user_id=user_id,
+        )
+
         flash("Record added successfully!", "success")
 
         return redirect(url_for("view_log"))
@@ -731,7 +971,8 @@ def edit_log(log_id):
 
         # DELETE button clicked
         if "delete" in request.form:
-            # Fetch the log entry to get kilometres and registration
+            # Fetch the log entry to get its stored odometer-affecting values.
+            new_odometer = None
             log_entry = db.execute("""
                 SELECT kilometres, registration
                 FROM log
@@ -763,6 +1004,17 @@ def edit_log(log_id):
 
                 # Delete the log entry
                 db.execute("DELETE FROM log WHERE id = ? AND user_id = ?", log_id, user_id)
+                record_audit(
+                    "log.delete",
+                    entity_type="log",
+                    entity_id=log_id,
+                    details={
+                        "summary": f"Deleted {_log_label(log)}",
+                        "removed": {k: log.get(k) for k in LOG_FIELDS},
+                        "vehicle_odometer_after": new_odometer,
+                    },
+                    user_id=user_id,
+                )
                 flash("Record deleted successfully, odometer updated.", "success")
             else:
                 flash("Log entry not found.", "warning")
@@ -853,6 +1105,29 @@ def edit_log(log_id):
                 SET odometer = ?
                 WHERE registration = ? AND user_id = ?
             """, new_odometer, registration, user_id)
+
+            # Audit the edit as a before/after diff of the changed fields.
+            after = {
+                "id": log_id, "user_id": user_id,
+                "date": log_date, "registration": registration,
+                "fuel_code": fuel_code, "receipt_number": receipt_number,
+                "purchased_at": purchased_at, "location_id": location_id,
+                "litres": litres, "price_per_litre": price_per_litre,
+                "sale_price": sale_price, "kilometres": kilometres,
+                "comments": comments, "partial_tank": partial_tank,
+            }
+            changed = _diff_fields(log, after)
+            record_audit(
+                "log.update",
+                entity_type="log",
+                entity_id=log_id,
+                details={
+                    "summary": "Edited %s: %s" % (_log_label(log), _diff_summary(changed)),
+                    "changed": changed,
+                    "vehicle_odometer_after": new_odometer,
+                },
+                user_id=user_id,
+            )
 
             flash("Record updated successfully!", "success")
             return redirect(url_for("view_log"))
@@ -1421,6 +1696,12 @@ def create_api_token():
     db.execute(
         "INSERT INTO api_tokens (user_id, token_name, token_hash, scopes) VALUES (?, ?, ?, ?)",
         user_id, name, hash_token(raw_token), scopes)
+    record_audit(
+        "api_token.create",
+        entity_type="api_token",
+        details={"name": name, "scopes": scopes},
+        user_id=user_id,
+    )
 
     # Show the raw token once (it won't be shown again)
     flash(f"API token created: <code>{raw_token}</code> — copy now, it won't be shown again.", "success")
@@ -1432,6 +1713,7 @@ def create_api_token():
 def revoke_api_token(token_id):
     user_id = session["user_id"]
     db.execute("UPDATE api_tokens SET revoked = 1 WHERE id = ? AND user_id = ?", token_id, user_id)
+    record_audit("api_token.revoke", entity_type="api_token", entity_id=token_id, user_id=user_id)
     flash("API token revoked.", "success")
     return redirect(url_for("settings"))
 
@@ -1571,6 +1853,13 @@ def add_location():
         "SELECT id FROM locations WHERE user_id = ? AND LOWER(retailer) = LOWER(?) AND LOWER(suburb) = LOWER(?)",
         user_id, retailer, suburb,
     )[0]["id"]
+    record_audit(
+        "location.create",
+        entity_type="location",
+        entity_id=new_id,
+        details={"retailer": retailer, "suburb": suburb, "summary": f"{retailer} {suburb}"},
+        user_id=user_id,
+    )
 
     if ajax:
         return json_out(True, label=f"{retailer} {suburb}", location_id=new_id)
@@ -1599,9 +1888,27 @@ def edit_location(location_id):
         flash(f"Location '{retailer} {suburb}' already exists.", "warning")
         return redirect(url_for("locations"))
 
+    ### Fetch old values for audit diff
+    old = db.execute(
+        "SELECT retailer, suburb FROM locations WHERE id = ? AND user_id = ?",
+        location_id, user_id,
+    )
+    old_label = f"{old[0]['retailer']} {old[0]['suburb']}" if old else None
+
     db.execute(
         "UPDATE locations SET retailer = ?, suburb = ? WHERE id = ? AND user_id = ?",
         retailer, suburb, location_id, user_id,
+    )
+    record_audit(
+        "location.update",
+        entity_type="location",
+        entity_id=location_id,
+        details={
+            "from": old_label,
+            "to": f"{retailer} {suburb}",
+            "summary": f"{old_label} → {retailer} {suburb}",
+        },
+        user_id=user_id,
     )
     # Because log rows reference this location by id, editing automatically
     # propagates the new name to every existing log entry.
@@ -1632,7 +1939,20 @@ def delete_location(location_id):
         )
         return redirect(url_for("locations"))
 
+    loc_row = db.execute(
+        "SELECT retailer, suburb FROM locations WHERE id = ? AND user_id = ?",
+        location_id, user_id,
+    )
+    label = f"{loc_row[0]['retailer']} {loc_row[0]['suburb']}" if loc_row else None
+
     db.execute("DELETE FROM locations WHERE id = ? AND user_id = ?", location_id, user_id)
+    record_audit(
+        "location.delete",
+        entity_type="location",
+        entity_id=location_id,
+        details={"summary": label},
+        user_id=user_id,
+    )
     flash("Location deleted.", "success")
     return redirect(url_for("locations"))
 
@@ -1741,6 +2061,18 @@ def add_vehicle():
                    odometer)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, user_id, registration, fuel_type, vehicle_type, make, model, year, odometer)
+        record_audit(
+            "vehicle.create",
+            entity_type="vehicle",
+            entity_id=registration,
+            details={
+                "summary": f"{year} {make} {model} ({registration})",
+                "registration": registration, "make": make, "model": model,
+                "year": year, "vehicle_type": vehicle_type, "fuel_type": fuel_type,
+                "odometer": odometer,
+            },
+            user_id=user_id,
+        )
 
         flash('Vehicle added successfully!', 'success')
 
@@ -1771,6 +2103,13 @@ def edit_vehicle(registration):
     if request.method == "POST":
         if "delete" in request.form:
             db.execute("DELETE FROM vehicles WHERE user_id = ? AND registration = ?", user_id, registration)
+            record_audit(
+                "vehicle.delete",
+                entity_type="vehicle",
+                entity_id=registration,
+                details={"summary": registration},
+                user_id=user_id,
+            )
             flash(f"Vehicle {registration} deleted successfully.", "success")
             return redirect(url_for("garage"))
 
@@ -1795,6 +2134,17 @@ def edit_vehicle(registration):
             SET fuel_type = ?, vehicle_type = ?, make = ?, model = ?, year = ?, odometer = ?
             WHERE user_id = ? AND registration = ?
         """, fuel_type, vehicle_type, make, model, year, odometer, user_id, registration)
+        record_audit(
+            "vehicle.update",
+            entity_type="vehicle",
+            entity_id=registration,
+            details={
+                "summary": f"Updated {registration}",
+                "fuel_type": fuel_type, "vehicle_type": vehicle_type,
+                "make": make, "model": model, "year": year, "odometer": odometer,
+            },
+            user_id=user_id,
+        )
 
         flash("Vehicle updated successfully!", "success")
         return redirect(url_for("garage"))
@@ -1817,6 +2167,25 @@ def settings():
     api_tokens = db.execute(
         "SELECT id, token_name, scopes, created_at, last_used, revoked "
         "FROM api_tokens WHERE user_id = ? ORDER BY id DESC", user_id)
+
+    # Audit / activity trail (most recent first).
+    audit_rows = db.execute(
+        "SELECT action, entity_id, details, ip_address, created_at "
+        "FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 100", user_id)
+    audit_entries = []
+    for r in audit_rows:
+        details = {}
+        try:
+            details = json.loads(r["details"]) if r["details"] else {}
+        except (ValueError, TypeError):
+            details = {}
+        audit_entries.append({
+            "label": ACTION_LABELS.get(r["action"], r["action"].replace("_", " ").title()),
+            "summary": details.get("summary", ""),
+            "created_at": r["created_at"],
+            "ip_address": r["ip_address"] or "",
+        })
+
     return render_template(
         "settings.html",
         user=user,
@@ -1824,6 +2193,7 @@ def settings():
         user_oidc_enabled=user_oidc,
         oidc_globally_enabled=OIDC_REGISTERED,
         api_tokens=api_tokens,
+        audit_entries=audit_entries,
     )
 
 
@@ -1843,6 +2213,11 @@ def account_oidc_toggle():
     current = int(user.get("oidc_enabled") or 0)
     new_val = 1 if not current else 0
     db.execute("UPDATE users SET oidc_enabled = ? WHERE id = ?", str(new_val), user_id)
+    record_audit(
+        "account.oidc_toggle",
+        details={"oidc_enabled": bool(new_val)},
+        user_id=user_id,
+    )
     flash(
         "Authentik login " + ("enabled." if new_val else "disabled."),
         "success",
@@ -1876,6 +2251,7 @@ def account_mfa():
             ",".join(recovery_codes),
             user_id,
         )
+        record_audit("account.mfa_enrolled", details={"method": "totp"}, user_id=user_id)
         # NOTE: TOTP secrets and recovery codes are stored plaintext.
         # For improved security, encrypt these fields at rest (e.g., via an
         # application-level encryption key or KMS) in a future iteration.
@@ -1905,6 +2281,7 @@ def mfa_challenge():
             if totp.verify(code):
                 session.clear()
                 session["user_id"] = user["id"]
+                record_audit("auth.login", details={"method": "password_mfa"}, user_id=user["id"])
                 db.execute(
                     "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
                     user["id"],
@@ -1921,6 +2298,7 @@ def mfa_challenge():
                 )
                 session.clear()
                 session["user_id"] = user["id"]
+                record_audit("auth.login", details={"method": "recovery_code"}, user_id=user["id"])
                 db.execute(
                     "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
                     user["id"],
@@ -1946,6 +2324,7 @@ def disable_mfa():
         "UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 WHERE id = ?",
         user_id,
     )
+    record_audit("account.mfa_disabled", user_id=user_id)
     flash("Two-factor authentication disabled.", "success")
     return redirect(url_for("account"))
 
