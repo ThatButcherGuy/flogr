@@ -6,10 +6,11 @@ Reports
 
 {% block main %}
 <div class="container text-start">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h2 class="mb-0">Reports &amp; Charts</h2>
+        <a href="{{ url_for('stats') }}" class="btn btn-outline-secondary">View Statistics</a>
+    </div>
     <div class="card mb-4">
-        <div class="card-header text-center">
-            <h2 class="mb-0">Reports &amp; Charts</h2>
-        </div>
         <div class="card-body">
             <!-- Filters -->
             <div class="row g-3 mb-4">
@@ -97,6 +98,10 @@ document.addEventListener('DOMContentLoaded', function () {
     let allLogs = [];
     const $ = (id) => document.getElementById(id);
 
+    // ---- Number formatting helpers: thousands separators + $ for money ----
+    const fmtNum = (v, d = 0) => Number(v || 0).toLocaleString('en-AU', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const fmtMoney = (v, d = 2) => '$' + Number(v || 0).toLocaleString('en-AU', { minimumFractionDigits: d, maximumFractionDigits: d });
+
     // ---- Fetch data ----
     fetch('/api/stats')
         .then(r => r.json())
@@ -151,14 +156,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const avgCostPerTank = logs.length ? (totalSpend / logs.length) : 0;
         const tankCount = logs.length;
         const cards = [
-            ['Tank fill-ups', tankCount],
-            ['Total spend', '$' + totalSpend.toFixed(2)],
-            ['Total litres', totalLitres.toFixed(1) + ' L'],
-            ['Total km', totalKm.toLocaleString() + ' km'],
-            ['Avg economy', avgLpk.toFixed(2) + ' L/100km'],
-            ['Avg price/L', '$' + avgPrice.toFixed(3)],
-            ['Avg cost/tank', '$' + avgCostPerTank.toFixed(2)],
-            ['Cost /100km', '$' + costPer100.toFixed(2)],
+            ['Tank fill-ups', fmtNum(tankCount)],
+            ['Total spend', fmtMoney(totalSpend)],
+            ['Total litres', fmtNum(totalLitres, 1) + ' L'],
+            ['Total km', fmtNum(totalKm) + ' km'],
+            ['Avg economy', fmtNum(avgLpk, 2) + ' L/100km'],
+            ['Avg price/L', fmtMoney(avgPrice, 3)],
+            ['Avg cost/tank', fmtMoney(avgCostPerTank)],
+            ['Cost /100km', fmtMoney(costPer100)],
         ];
         el.innerHTML = cards.map(([label, val]) =>
             `<div class="col-md-3 col-6"><div class="card stat-card h-100">
@@ -317,10 +322,31 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
     function baseOpts(yLabel) {
+        // Derive formatting from the axis label so every chart's tooltips and
+        // tick labels show thousands separators, with $ prefix for money.
+        let money = false, decimals = 2, unit = '';
+        if (yLabel === '$/L') { money = true; decimals = 3; }
+        else if (yLabel === '$') { money = true; decimals = 2; }
+        else if (yLabel === 'Litres') { unit = ' L'; decimals = 1; }
+        else { decimals = 2; } // L/100km (no unit glyph)
+        const fm = (v) => money
+            ? '$' + Number(v || 0).toLocaleString('en-AU', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+            : Number(v || 0).toLocaleString('en-AU', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + unit;
         return {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: false, title: { display: true, text: yLabel } } }
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const v = ctx.parsed.y;
+                            return yLabel === 'Litres' ? fm(v) : yLabel + ': ' + fm(v);
+                        }
+                    }
+                }
+            },
+            scales: { y: { beginAtZero: false, title: { display: true, text: yLabel },
+                ticks: { callback: (v) => fm(v) } } }
         };
     }
 

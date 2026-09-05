@@ -105,6 +105,18 @@ Vehicle Statistics - {{ vehicle.registration }}
                 <div class="stat-label">Tank fill-ups</div>
             </div>
         </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{% if vehicle_days_since_last_fill is not none %}{{ vehicle_days_since_last_fill }}d{% else %}—{% endif %}</div>
+                <div class="stat-label">Days since last fill</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="card stat-card h-100">
+                <div class="stat-value">{% if vehicle_avg_days_per_tank is not none %}{{ vehicle_avg_days_per_tank }}d{% else %}—{% endif %}</div>
+                <div class="stat-label">Avg days / tank</div>
+            </div>
+        </div>
     </div>
 
     <!-- Recent log table -->
@@ -131,10 +143,10 @@ Vehicle Statistics - {{ vehicle.registration }}
                             <td>{{ log.date }}</td>
                             <td>{{ log.fuel_code }}</td>
                             <td>{{ log.purchased_at }}</td>
-                            <td>{{ log.litres }}</td>
+                            <td>{{ "{:,.2f}".format(log.litres) }}</td>
                             <td>${{ "{:,.3f}".format(log.price_per_litre) }}</td>
                             <td>${{ "{:,.2f}".format(log.sale_price) }}</td>
-                            <td>{{ log.kilometres }}</td>
+                            <td>{{ "{:,.0f}".format(log.kilometres) }}</td>
                             <td>{{ "{:,.2f}".format(log.litres_per_100km) }}</td>
                         </tr>
                         {% endfor %}
