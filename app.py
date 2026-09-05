@@ -694,6 +694,11 @@ def register():
 
             return redirect(url_for('register'))
 
+        # Password strength requirement (wish list: "Force login password requirements")
+        if len(password) < 8:
+            flash('Password must be at least 8 characters long.', 'danger')
+            return redirect(url_for('register'))
+
         # Update SQL user table if validation passes
         try:
             hash = generate_password_hash(password)
@@ -770,7 +775,7 @@ def new_record():
         # Perform validation before inserting into the database
         litres = float(litres)
         price_per_litre = float(price_per_litre)
-        kilometres = int(kilometres)
+        kilometres = round(float(kilometres))
 
         if litres < 0 or price_per_litre < 0 or kilometres < 0:
             flash("Invalid input: Negative values not allowed for litres, price per litre, or kilometres.", "danger")
@@ -1038,7 +1043,7 @@ def edit_log(log_id):
             # Validate numeric fields
             litres = float(litres)
             price_per_litre = float(price_per_litre)
-            kilometres = int(kilometres)
+            kilometres = round(float(kilometres))
 
             if litres < 0 or price_per_litre < 0 or kilometres < 0:
                 flash("Invalid input: Negative values not allowed for litres, price per litre, or kilometres.", "danger")
@@ -1141,6 +1146,18 @@ def edit_log(log_id):
 
     return render_template("edit_log.html", log=log, vehicles=vehicles, fuel_types=fuel_types,
                            locations=user_locations(user_id))
+
+def _avg_days_between_dates(dates):
+    """Average number of days between consecutive chronologically-sorted dates.
+
+    Returns None when there are fewer than two fills (no interval to average).
+    Used for the 'Average days per tank' stat (how long a tank typically lasts).
+    """
+    if len(dates) < 2:
+        return None
+    diffs = [(b - a).days for a, b in zip(dates, dates[1:])]
+    return round(sum(diffs) / len(diffs), 1)
+
 
 @app.route("/stats")
 @login_required
@@ -1363,10 +1380,10 @@ def stats():
 
         # ---- Monthly spend trend (last 12 months, for a compact chart) ----
         monthly_spend = db.execute(f"""
-            SELECT SUBSTR(date, 1, 7) AS month,
-                   SUM(sale_price) AS spend,
-                   COUNT(*) AS n
-            FROM log
+                    SELECT SUBSTR(date, 1, 7) AS month,
+                           SUM(sale_price) AS spend,
+                           COUNT(*) AS n
+                    FROM log
             WHERE {where}
             GROUP BY SUBSTR(date, 1, 7)
             ORDER BY month DESC
@@ -1374,6 +1391,16 @@ def stats():
             """, *params)
         monthly_trend = [{"month": r["month"], "spend": round(float(r["spend"] or 0), 2), "n": r["n"]} for r in monthly_spend]
         monthly_trend.reverse()  # ascending
+
+        # ---- Average days per tank (consecutive fill dates in the filter) ----
+        fill_date_rows = db.execute(f"""
+            SELECT date FROM log WHERE {where} ORDER BY date
+        """, *params)
+        fill_dates = [
+            datetime.strptime(r["date"], "%Y-%m-%d").date()
+            for r in fill_date_rows if r["date"]
+        ]
+        avg_days_per_tank = _avg_days_between_dates(fill_dates)
 
         return render_template("stats.html",
                                vehicles=vehicles,
@@ -1403,7 +1430,8 @@ def stats():
                                worst_price_year=worst_price_year,
                                top_location=top_location,
                                cheapest_locations=cheapest_locations,
-                               monthly_trend=monthly_trend)
+                               monthly_trend=monthly_trend,
+                               avg_days_per_tank=avg_days_per_tank)
 
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
@@ -1523,6 +1551,21 @@ def vehicle_stats(registration):
         vehicle_best_lpk = econ_res[0]["best"] if econ_res[0]["best"] else 0.0
         vehicle_worst_lpk = econ_res[0]["worst"] if econ_res[0]["worst"] else 0.0
 
+        # ---- Days since last fill + average days per tank (this vehicle/range) ----
+        vfill_rows = db.execute("""
+            SELECT date FROM log
+            WHERE user_id = ? AND registration = ? AND date >= ? AND date <= ?
+            ORDER BY date
+        """, user_id, registration, start_date.date(), end_date.date())
+        vfill_dates = [
+            datetime.strptime(r["date"], "%Y-%m-%d").date()
+            for r in vfill_rows if r["date"]
+        ]
+        vehicle_avg_days_per_tank = _avg_days_between_dates(vfill_dates)
+        vehicle_days_since_last_fill = (
+            (date.today() - vfill_dates[-1]).days if vfill_dates else None
+        )
+
         return render_template("vehicle_stats.html", vehicle=vehicle[0],
                                vehicle_total_sale_price=vehicle_total_sale_price,
                                vehicle_avg_price_per_litre=vehicle_avg_price_per_litre,
@@ -1536,7 +1579,9 @@ def vehicle_stats(registration):
                                vehicle_worst_lpk=vehicle_worst_lpk,
                                mileage=mileage,
                                start_date=start_date_str, end_date=end_date_str,
-                               vehicle_log=vehicle_log)
+                               vehicle_log=vehicle_log,
+                               vehicle_avg_days_per_tank=vehicle_avg_days_per_tank,
+                               vehicle_days_since_last_fill=vehicle_days_since_last_fill)
 
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")

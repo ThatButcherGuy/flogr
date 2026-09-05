@@ -109,6 +109,10 @@ Statistics
                     <div class="stat-label">Days since</div>
                 </div>
                 <div class="col-4 col-md-2">
+                    <div class="stat-value small">{% if avg_days_per_tank is not none %}{{ avg_days_per_tank }}d{% else %}—{% endif %}</div>
+                    <div class="stat-label">Avg days / tank</div>
+                </div>
+                <div class="col-4 col-md-2">
                     <div class="stat-value small">{{ "{:,.2f}".format(last_log.litres_per_100km) }}</div>
                     <div class="stat-label">L/100km</div>
                 </div>
@@ -147,6 +151,7 @@ Statistics
                         <td>Days Since Last Fill</td>
                         <td>{{ days_since }} day{{ 's' if days_since != 1 }}</td>
                     </tr>
+                    <tr><td>Average Days Per Tank</td><td>{% if avg_days_per_tank is not none %}{{ avg_days_per_tank }} days{% else %}—{% endif %}</td></tr>
                     <tr><td>Total Combined Sale Price</td><td>${{ "{:,.2f}".format(total_sale_price) }}</td></tr>
                     <tr><td>Total Combined Litres</td><td>{{ "{:,.2f}".format(total_litres) }} litres</td></tr>
                     <tr><td>Total Combined Kilometres</td><td>{{ "{:,.0f}".format(total_kilometres) }} km</td></tr>
@@ -191,45 +196,6 @@ Statistics
     </div>
     {% endif %}
 
-    <!-- Fuel price history -->
-    {% if price_history %}
-    <div class="card mb-4">
-        <div class="card-header"><h5 class="mb-0">Fuel Price History (avg $/L by year)</h5></div>
-        <div class="card-body">
-            <div class="row text-center mb-3">
-                {% if best_price_year %}
-                <div class="col-md-4 col-6">
-                    <div class="stat-value">${{ "{:,.3f}".format(best_price_year.avg_price) }}</div>
-                    <div class="stat-label">Cheapest year ({{ best_price_year.year }})</div>
-                </div>
-                {% endif %}
-                {% if worst_price_year %}
-                <div class="col-md-4 col-6">
-                    <div class="stat-value">${{ "{:,.3f}".format(worst_price_year.avg_price) }}</div>
-                    <div class="stat-label">Most expensive year ({{ worst_price_year.year }})</div>
-                </div>
-                {% endif %}
-                <div class="col-md-4 col-6">
-                    <div class="stat-value">${{ "{:,.3f}".format(avg_price_per_litre) }}</div>
-                    <div class="stat-label">Overall avg $/L</div>
-                </div>
-            </div>
-            <table class="table table-sm table-striped table-bordered mb-0">
-                <thead><tr><th>Year</th><th>Avg $/L</th><th>Fill-ups</th></tr></thead>
-                <tbody>
-                    {% for p in price_history %}
-                    <tr>
-                        <td>{{ p.year }}</td>
-                        <td>${{ "{:,.3f}".format(p.avg_price) }}</td>
-                        <td>{{ p.n }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
     <!-- Location insights -->
     {% if top_location %}
     <div class="card mb-4">
@@ -250,24 +216,6 @@ Statistics
                     <div class="stat-label">Cheapest avg $/L ({{ cheapest_locations[0].loc_label }})</div>
                 </div>
                 {% endif %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Monthly spend trend -->
-    {% if monthly_trend %}
-    <div class="card mb-4">
-        <div class="card-header"><h5 class="mb-0">Monthly Spend (last 12 months)</h5></div>
-        <div class="card-body">
-            <div class="row">
-                {% for m in monthly_trend %}
-                <div class="col-4 col-md-2 mb-2 text-center">
-                    <div class="stat-label">{{ m.month }}</div>
-                    <div class="small">${{ "{:,.0f}".format(m.spend) }}</div>
-                    <div class="progress" style="height:6px;"><div class="progress-bar bg-primary" style="width:{{ (m.spend / (monthly_trend|map(attribute='spend')|list|max)) * 100 if monthly_trend|map(attribute='spend')|list|max else 0 }}%"></div></div>
-                </div>
-                {% endfor %}
             </div>
         </div>
     </div>
