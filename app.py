@@ -957,6 +957,94 @@ def view_log():
 
     return render_template("view_log.html", logs=logs, registrations=registrations, selected_registration=selected_registration)
 
+
+@app.route("/view_log/data")
+@login_required
+def view_log_data():
+    """Server-side DataTables endpoint for View Log.
+
+    Returns ONLY the rows for the requested page (plus the total counts for
+    DataTables), so large logs don't ship ~1.5MB HTML every time. Reads the
+    standard DataTables query params (draw, start, length, order, search).
+    """
+    user_id = session["user_id"]
+    reg_filter = request.args.get("registration", "") or ""
+
+    where = "log.user_id = ?"
+    params = [user_id]
+    if reg_filter:
+        where += " AND log.registration = ?"
+        params.append(reg_filter)
+
+    draw = int(request.args.get("draw", 1) or 1)
+    start = int(request.args.get("start", 0) or 0)
+    length = int(request.args.get("length", 25) or 25)
+    search = (request.args.get("search[value]", "") or "").strip()
+
+    # Ordering: map DataTables column index -> SQL column.
+    col_map = {
+        0: None,          # Actions (not sortable)
+        1: "log.date",
+        2: "log.registration",
+        3: None,          # Fuel code
+        4: "log.receipt_number",
+        5: "log.purchased_at",
+        6: "log.litres",
+        7: "log.price_per_litre",
+        8: "log.sale_price",
+        9: "log.kilometres",
+        10: None,         # L/100km (computed)
+        11: "log.comments",
+    }
+    order_col = request.args.get("order[0][column]", "1")
+    order_dir = request.args.get("order[0][dir]", "desc")
+    order_sql = ""
+    col = col_map.get(int(order_col) if order_col.isdigit() else 1)
+    if col:
+        order_sql = f" ORDER BY {col} {('ASC' if order_dir == 'asc' else 'DESC')}"
+    else:
+        order_sql = " ORDER BY log.date DESC"
+
+    # Optional search across text columns.
+    if search:
+        where += " AND (log.registration LIKE ? OR log.receipt_number LIKE ? OR LOWER(log.purchased_at) LIKE ? OR LOWER(log.comments) LIKE ?)"
+        like = f"%{search}%"
+        llike = like.lower()
+        params += [like, like, llike, llike]
+
+    total = db.execute(
+        f"SELECT COUNT(*) AS n FROM log WHERE {where}", *params)[0]["n"]
+    page = db.execute(
+        f"SELECT * FROM log WHERE {where}{order_sql} LIMIT ? OFFSET ?",
+        *params, length, start)
+
+    rows = []
+    for log in page:
+        lpk = (log["litres"] / log["kilometres"] * 100) if log["kilometres"] and log["kilometres"] > 0 else 0.0
+        rows.append({
+            "id": log["id"],
+            "date": log["date"],
+            "registration": log["registration"],
+            "fuel_code": log["fuel_code"],
+            "receipt_number": log["receipt_number"] or "",
+            "purchased_at": log["purchased_at"] or "",
+            "litres": "{:,.2f}".format(log["litres"]),
+            "price_per_litre": "$" + "{:,.3f}".format(log["price_per_litre"]),
+            "sale_price": "$" + "{:,.2f}".format(log["sale_price"]),
+            "kilometres": "{:,.0f}".format(log["kilometres"]),
+            "litres_per_100km": "{:,.2f}".format(lpk),
+            "partial_tank": bool(log.get("partial_tank")),
+            "comments": log["comments"] or "",
+            "edit_link": f"<a href=\"{url_for('edit_log', log_id=log['id'])}\" data-bs-toggle='tooltip' title='Edit Log Entry'><img src=\"{url_for('static', filename='edit_icon.png')}\" alt='Edit' width='18'></a>",
+        })
+
+    return jsonify({
+        "draw": draw,
+        "recordsTotal": total,
+        "recordsFiltered": total,
+        "data": rows,
+    })
+
 @app.route("/log/<int:log_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_log(log_id):
@@ -1195,6 +1283,23 @@ def _resolve_period(period, today):
         return None, None, "All time"
     label, start, end = d[period]
     return start.isoformat(), end.isoformat(), label
+
+
+def _previous_period(start_iso, end_iso, today):
+    """Given the current filter's (start, end) ISO dates, compute the equivalent
+    previous window immediately before it. Returns (prev_start_iso, prev_end_iso)
+    or (None, None) if no valid range is available."""
+    try:
+        if not end_iso or not start_iso:
+            return None, None
+        end = datetime.strptime(end_iso, "%Y-%m-%d").date()
+        start = datetime.strptime(start_iso, "%Y-%m-%d").date()
+        span = (end - start).days + 1  # inclusive length of current window
+        prev_end = start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span - 1)
+        return prev_start.isoformat(), prev_end.isoformat()
+    except (ValueError, TypeError):
+        return None, None
 
 
 @app.route("/stats")
@@ -1479,6 +1584,76 @@ def stats():
         ]
         avg_days_per_tank = _avg_days_between_dates(fill_dates)
 
+        # ---- Comparison band: this period vs previous equivalent period ----
+        # Compute the previous window (same length, immediately before the
+        # current one) and aggregate spend/economy/km/days so trends are visible.
+        comparison = None
+        cur_has_dates = bool(start_date_str and end_date_str)
+        if cur_has_dates:
+            prev_start, prev_end = _previous_period(start_date_str, end_date_str, date.today())
+            if prev_start and prev_end:
+                samereg = " AND log.registration = ?" if reg_filter else ""
+                prev_params = [user_id] + ([reg_filter] if reg_filter else []) + [prev_start, prev_end]
+                agg = db.execute(f"""
+                    SELECT
+                        SUM(log.sale_price) AS spend,
+                        SUM(log.kilometres) AS km,
+                        SUM(log.litres) AS litres,
+                        COUNT(*) AS fills
+                    FROM log
+                    WHERE log.user_id = ?{samereg}
+                      AND log.date >= ? AND log.date <= ?
+                """, *prev_params)[0]
+                pecon = db.execute(f"""
+                    SELECT SUM(log.litres) AS lit, SUM(log.kilometres) AS km
+                    FROM log
+                    WHERE log.user_id = ?{samereg} AND partial_tank = 0
+                      AND log.date >= ? AND log.date <= ?
+                """, *prev_params)[0]
+                p_fills = agg["fills"] or 0
+                prev_spend = agg["spend"] or 0
+                prev_km = agg["km"] or 0
+                prev_litres = agg["litres"] or 0
+                prev_econ = (pecon["lit"] or 0) / (pecon["km"] or 0) * 100 if pecon["km"] else None
+                p_dates = db.execute(f"""
+                    SELECT log.date FROM log
+                    WHERE log.user_id = ?{samereg}
+                      AND log.date >= ? AND log.date <= ? ORDER BY log.date
+                """, *prev_params)
+                prev_days = _avg_days_between_dates([
+                    datetime.strptime(r["date"], "%Y-%m-%d").date()
+                    for r in p_dates if r["date"]
+                ])
+
+                def _pct(cur, prev):
+                    if prev in (None, 0):
+                        return None
+                    return round((cur / prev - 1) * 100, 1)
+
+                comparison = {
+                    "current": {
+                        "spend": total_sale_price,
+                        "econ": combined_litres_per_100km,
+                        "km": total_kilometres,
+                        "days": avg_days_per_tank,
+                        "fills": fill_count,
+                    },
+                    "previous": {
+                        "spend": prev_spend,
+                        "econ": prev_econ,
+                        "km": prev_km,
+                        "days": prev_days,
+                        "fills": p_fills,
+                        "label": f"{prev_start} → {prev_end}",
+                    },
+                    "pct": {
+                        "spend": _pct(total_sale_price, prev_spend),
+                        "km": _pct(total_kilometres, prev_km),
+                        "econ_delta": (prev_econ - combined_litres_per_100km) if (prev_econ is not None) else None,
+                        "days_delta": (prev_days - avg_days_per_tank) if (prev_days is not None and avg_days_per_tank is not None) else None,
+                    },
+                }
+
         # ---- Filter context label (shown under the page heading) ----
         pieces = []
         if reg_filter:
@@ -1531,7 +1706,8 @@ def stats():
                                distinct_locations=distinct_locations,
                                best_economy_location=best_economy_location,
                                monthly_trend=monthly_trend,
-                               avg_days_per_tank=avg_days_per_tank)
+                               avg_days_per_tank=avg_days_per_tank,
+                               comparison=comparison)
 
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
