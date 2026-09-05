@@ -86,6 +86,21 @@ CREATE TABLE api_tokens (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Audit log: immutable, per-user trail of data & account changes.
+-- 'action' is a dotted verb e.g. 'log.update', 'location.create',
+-- 'auth.login', 'api_token.revoke'. 'details' is JSON (diffs for log edits).
+CREATE TABLE audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    action      TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id   INTEGER,
+    details     TEXT,
+    ip_address  TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 
 INSERT INTO fuel_types (code, name) VALUES 
 ('DL', 'Diesel'),

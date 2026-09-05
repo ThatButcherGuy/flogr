@@ -196,6 +196,43 @@ Settings
     {% endif %}
   </div>
 </div>
+
+<!-- Activity / Audit Log -->
+<div class="card mx-auto mb-3" style="max-width:600px">
+  <div class="card-header">
+    <h5 class="mb-0">Activity Log</h5>
+  </div>
+  <div class="card-body text-start">
+    <p class="text-muted small">
+      A record of changes to your fuel log and account, kept indefinitely for
+      troubleshooting and traceability. Most recent first.
+    </p>
+    {% if audit_entries %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr><th>When</th><th>Action</th><th>Details</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          {% for e in audit_entries %}
+          <tr>
+            <td class="text-nowrap small">{{ e.created_at }}</td>
+            <td class="small">
+              {% if "login_failed" in e.label.lower() %}<span class="badge bg-danger">{{ e.label }}</span>
+              {% else %}{{ e.label }}{% endif %}
+            </td>
+            <td class="small text-muted">{{ e.summary }}</td>
+            <td class="small text-muted text-nowrap">{{ e.ip_address }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted small">No activity recorded yet.</p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}
 
 {% block script %}
