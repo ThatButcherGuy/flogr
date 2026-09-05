@@ -431,9 +431,10 @@ CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 def _csrf_origin_check():
     if request.method in CSRF_SAFE_METHODS:
         return None
-    # Only enforce for state-changing (non-api-token) requests; the API uses a
-    # Bearer token which is inherently CSRF-safe.
-    if request.path.startswith(("/api/",)):
+    # Skip API (Bearer-token, inherently CSRF-safe) and the OIDC callback —
+    # the Authentik redirect-back POST comes from a different origin (auth.*)
+    # by design, so origin-vs-host would wrongly reject it.
+    if request.path.startswith(("/api/", "/login/oidc")):
         return None
     origin = request.headers.get("Origin")
     host = request.headers.get("Host")
