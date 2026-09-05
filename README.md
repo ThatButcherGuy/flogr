@@ -207,7 +207,6 @@ A single SQLite database with these tables:
 
 ## Development
 
-- Repo: self-hosted Gitea at `git.brendoscloud.com` → `brendos-cloud/flogr`.
 - Single persistent clone; releases are git tags (`vX.Y.Z`). Semver: **minor** for features, **patch** for fixes/security.
 - Database schema lives in `static/schema.sql` (fresh installs); existing installs get new tables/columns via migrations run at app startup. A schema change needs **both**.
 - Run locally: `uv venv && source .venv/bin/activate && uv pip install -r requirements.txt`, then set `DATABASE_PATH`, `SECRET_KEY` and start with `python app.py`.
