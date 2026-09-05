@@ -1274,6 +1274,7 @@ def _resolve_period(period, today):
         "7d": ("Last 7 days", today - timedelta(days=6), today),
         "30d": ("Last 30 days", today - timedelta(days=29), today),
         "90d": ("Last 90 days", today - timedelta(days=89), today),
+        "6m": ("Last 6 months", today - timedelta(days=182), today),
         "12m": ("Last 12 months", today - timedelta(days=364), today),
         "ytd": ("Year to date", date(today.year, 1, 1), today),
         # Australian financial year: 1 July – 30 June.
@@ -1764,6 +1765,12 @@ def vehicle_stats(registration):
         # Fetch start and end dates from query parameters or default to today
         start_date_str = request.args.get('start_date', earliest_date)
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+        # Apply a quick-date preset if one is selected (overrides manual dates).
+        active_period = request.args.get('period', '')
+        if active_period:
+            p_start, p_end, _p_label = _resolve_period(active_period, date.today())
+            if p_start:
+                start_date_str, end_date_str = p_start, p_end
 
         # Convert date strings to datetime objects
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
@@ -1855,6 +1862,7 @@ def vehicle_stats(registration):
                                vehicle_worst_lpk=vehicle_worst_lpk,
                                mileage=mileage,
                                start_date=start_date_str, end_date=end_date_str,
+                               active_period=active_period,
                                vehicle_log=vehicle_log,
                                vehicle_avg_days_per_tank=vehicle_avg_days_per_tank,
                                vehicle_days_since_last_fill=vehicle_days_since_last_fill)
