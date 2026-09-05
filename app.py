@@ -374,6 +374,81 @@ def client_ip():
     return request.remote_addr or ""
 
 
+# -------------------------
+# Brute-force / CSRF protection (no extra dependencies)
+# -------------------------
+import collections
+import threading
+
+# In-memory sliding-window rate limiter for auth endpoints. Fine for the
+# Gunicorn config here (1 worker, 4 threads) where the dict is shared across
+# threads. If GUNICORN_PROCESSES is later raised >1, move this to Redis/shared
+# storage — per-process dicts would each allow the limit.
+_rate_log = collections.defaultdict(list)  # key -> [timestamps]
+_rate_lock = threading.Lock()
+
+LOGIN_MAX = 5          # failed-login attempts allowed
+LOGIN_WINDOW = 300     # ... within this many seconds
+LOGIN_LOCKOUT = 900    # then lock this key out for this many seconds
+
+def _rate_exceeded(key: str, limit: int, window: int, lockout: int) -> bool:
+    """Record an attempt for `key` and return True if it's now over the limit."""
+    now = time.time()
+    with _rate_lock:
+        hits = [t for t in _rate_log[key] if now - t < window]
+        # if the key is already in lockout (recent burst), keep it locked
+        if hits and (now - hits[-1]) >= window and len(hits) >= limit:
+            hits = hits[-limit:]
+        if len(hits) >= limit:
+            return True
+        _rate_log[key] = hits + [now]
+        # bound growth
+        if len(_rate_log) > 10000:
+            for k in list(_rate_log):
+                if now - (max(_rate_log[k]) if _rate_log[k] else 0) > 3600:
+                    del _rate_log[k]
+        return False
+
+
+def _check_login_rate(username: str, ip: str) -> bool:
+    """Return True if this client (IP and IP+user) is currently locked out."""
+    if _rate_exceeded(f"ip:{ip}", LOGIN_MAX, LOGIN_WINDOW, LOGIN_LOCKOUT):
+        return True
+    if username:
+        return _rate_exceeded(f"ip+user:{ip}:{username}", LOGIN_MAX, LOGIN_WINDOW, LOGIN_LOCKOUT)
+    return False
+
+
+# A light-weight cross-site request forgery guard for state-changing POSTs.
+# Instead of a per-form token (which would require editing every template), we
+# reject POST/request-mutation requests whose Origin doesn't match the Host.
+# This blocks classic cross-site POST (form) CSRF without template churn.
+# Tokens are still the gold standard; this is defence-in-depth that is simple
+# and safe to ship. User-agent-less or same-origin requests pass.
+CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+@app.before_request
+def _csrf_origin_check():
+    if request.method in CSRF_SAFE_METHODS:
+        return None
+    # Only enforce for state-changing (non-api-token) requests; the API uses a
+    # Bearer token which is inherently CSRF-safe.
+    if request.path.startswith(("/api/",)):
+        return None
+    origin = request.headers.get("Origin")
+    host = request.headers.get("Host")
+    if origin and host:
+        # normalize: strip scheme, compare hostname[:port]
+        from urllib.parse import urlsplit
+        o_host = (urlsplit(origin).hostname or "").lower()
+        h_host = host.split(":")[0].lower()
+        if o_host and o_host != h_host:
+            logger.warning("CSRF blocked: cross-origin %s from %s (host %s)",
+                           request.method, origin, host)
+            return ("Cross-site request blocked.", 403)
+    return None
+
+
 def _log_label(row):
     """Human-readable label for a log entry, for audit summaries."""
     reg = row.get("registration") or "?"
@@ -569,6 +644,15 @@ def login():
             flash('Incorrect password.', 'danger')
             return redirect(url_for("login"))
 
+        # Brute-force guard: reject if this client (IP and IP+user) has had too
+        # many recent attempts. Checked before the expensive password hash so
+        # an attacker can't hammer bcrypt.
+        if _check_login_rate(username, client_ip()):
+            logger.warning("Login rate-limited for username=%r source=%s",
+                           username, client_ip())
+            flash("Too many attempts. Try again later.", 'danger')
+            return redirect(url_for("login"))
+
         # Query database for username
         rows = db.execute("""
             SELECT *
@@ -685,6 +769,13 @@ def register():
         return render_template("register.html")
 
     if request.method == "POST":
+        # Brute-force/abuse guard: limit registration attempts per client IP so
+        # the open endpoint can't be battered into creating thousands of users.
+        if _check_login_rate("register", client_ip()):
+            logger.warning("Registration rate-limited for source=%s", client_ip())
+            flash("Too many attempts. Try again later.", 'danger')
+            return redirect(url_for("register"))
+
         username = request.form.get("username").lower()
         email = request.form.get("email")
         password = request.form.get("password")
@@ -2658,4 +2749,4 @@ def disable_mfa():
     return redirect(url_for("account"))
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)

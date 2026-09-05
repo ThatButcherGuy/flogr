@@ -2,7 +2,7 @@
 
 A self-hosted web app for logging your fuel purchases and tracking vehicle fuel economy. Enter each refuel, and fLOGr calculates litres/100km, cost per 100 km, price trends, and per-vehicle comparisons over time.
 
-Built with **Flask** + **SQLite** + **Chart.js**, styled with **Bootstrap 5**. Developed by Brenden Taylor (ThatButcherGuy).
+Built with **Flask** + **SQLite** + **Chart.js**, styled with **Bootstrap 5**. Developed by ThatButcherGuy.
 
 ---
 
