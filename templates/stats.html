@@ -59,6 +59,48 @@ Statistics
         </div>
     </div>
 
+    <!-- Comparison band: this period vs previous -->
+    {% if comparison %}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><h5 class="mb-0">Trend vs Previous Period</h5>
+            <small class="text-muted">comparing this range to {{ comparison.previous.label }}</small>
+        </div>
+        <div class="card-body">
+            <div class="row row-cols-2 row-cols-md-4 g-3 text-center">
+                <div class="col">
+                    <div class="stat-label">Total spend</div>
+                    <div class="stat-value small">${{ "{:,.2f}".format(comparison.current.spend) }}</div>
+                    <div class="small text-muted">prev ${{ "{:,.2f}".format(comparison.previous.spend) }}</div>
+                    {% if comparison.pct.spend is not none %}
+                    <span class="badge {% if comparison.pct.spend >= 0 %}bg-danger{% else %}bg-success{% endif %}">{{ "%+.1f"|format(comparison.pct.spend) }}%</span>
+                    {% endif %}
+                </div>
+                <div class="col">
+                    <div class="stat-label">Economy</div>
+                    <div class="stat-value small">{{ "{:,.2f}".format(comparison.current.econ) }} L/100km</div>
+                    <div class="small text-muted">prev {{ "{:,.2f}".format(comparison.previous.econ if comparison.previous.econ is not none else 0) }} L/100km</div>
+                    {% if comparison.pct.econ_delta is not none %}
+                    <span class="badge {% if comparison.pct.econ_delta <= 0 %}bg-success{% else %}bg-danger{% endif %}">{{ "%+.2f"|format(comparison.pct.econ_delta) }} L/100km</span>
+                    {% endif %}
+                </div>
+                <div class="col">
+                    <div class="stat-label">Distance</div>
+                    <div class="stat-value small">{{ "{:,.0f}".format(comparison.current.km) }} km</div>
+                    <div class="small text-muted">prev {{ "{:,.0f}".format(comparison.previous.km) }} km</div>
+                    {% if comparison.pct.km is not none %}
+                    <span class="badge {% if comparison.pct.km < 0 %}bg-danger{% else %}bg-success{% endif %}">{{ "%+.1f"|format(comparison.pct.km) }}%</span>
+                    {% endif %}
+                </div>
+                <div class="col">
+                    <div class="stat-label">Avg days / tank</div>
+                    <div class="stat-value small">{{ "{:,.1f}".format(comparison.current.days) if comparison.current.days is not none else '—' }}d</div>
+                    <div class="small text-muted">prev {{ "{:,.1f}".format(comparison.previous.days) if comparison.previous.days is not none else '—' }}d</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Summary cards -->
     <div class="row g-3 mb-4">
         <div class="col-md-3 col-6">

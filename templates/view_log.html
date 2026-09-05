@@ -21,26 +21,55 @@ View Log
 
 <script>
 $(document).ready( function () {
-    // Initialize DataTables with explicit column types so sorting works reliably,
-    // even though columns may mix numbers and the "Partial" badge text.
-    $('#logTable').DataTable({
+    // Server-side processing: the page loads instantly (empty table), and
+    // DataTables fetches one page of rows at a time from /view_log/data.
+    // This keeps the ~1.5MB full-log response from slowing down the page.
+    const table = $('#logTable').DataTable({
+        "serverSide": true,
+        "ajax": {
+            "url": "{{ url_for('view_log_data') }}",
+            "data": function (d) {
+                d.registration = $('#registrationFilter').val() || '';
+            }
+        },
         "paging": true,
         "searching": true,
         "ordering": true,
-        "order": [[ 1, "desc" ]],  // Default sorting by date column in descending order
         "responsive": true,
+        "pageLength": 25,
+        "order": [[ 1, "desc" ]],  // Default sorting by date column descending
+        "columns": [
+            { "data": "edit_link", "orderable": false },
+            { "data": "date" },
+            { "data": "registration" },
+            { "data": "fuel_code", "orderable": false },
+            { "data": "receipt_number" },
+            { "data": "purchased_at" },
+            { "data": "litres" },
+            { "data": "price_per_litre" },
+            { "data": "sale_price" },
+            { "data": "kilometres" },
+            { "data": "litres_per_100km", "orderable": false },
+            { "data": "comments" }
+        ],
         "columnDefs": [
-            { "targets": 0, "orderable": false },                     // Actions (icons) - not sortable
-            { "targets": 3, "orderable": false },                     // Fuel code
-            { "targets": 6, "type": "num" },                          // Litres (ISO-safe numeric)
-            { "targets": 7, "type": "num" },                          // Price/L
-            { "targets": 8, "type": "num" },                          // Sale price
-            { "targets": 9, "type": "num" },                          // Kilometres
-            { "targets": 10, "type": "num", "sortOrder": "desc" }     // L/100km (uses data-sort attr)
+            { "targets": 10, "render": function (data, type, row) {
+                if (row.partial_tank) {
+                    return '<span class="badge bg-warning text-dark" title="Partial top-up — excluded from fuel-economy stats">Partial</span>';
+                }
+                return row.litres_per_100km;
+            } }
         ],
         "initComplete": function () {
             $('#logTable_filter input').attr('id', 'logSearch');
         }
+    });
+
+    // Re-filter when the registration dropdown changes
+    $('#registrationFilter').on('change', function () {
+        const reg = $(this).val() || '';
+        table.ajax.reload();
+        $('#exportCsv').attr('href', "{{ url_for('export_log', registration='') }}" + (reg ? '?registration=' + encodeURIComponent(reg) : ''));
     });
 });
 </script>
@@ -55,18 +84,18 @@ $(document).ready( function () {
         <div class="card-body">
     <div class="row justify-content-center mt-3">
         <div class="col-md-8">
-            <form method="POST" action="{{ url_for('view_log') }}" class="mb-3">
+            <form method="GET" action="{{ url_for('view_log') }}" class="mb-3">
                 <div class="input-group">
-                    <label for="registration" class="input-group-text">Filter by Registration:</label>
-                    <select name="registration" id="registration" class="form-select">
+                    <label for="registrationFilter" class="input-group-text">Filter by Vehicle:</label>
+                    <select name="registration" id="registrationFilter" class="form-select">
                         <option value="">-- All --</option>
                         {% for reg in registrations %}
-                            <option value="{{ reg['registration'] }}" {% if reg['registration'] == selected_registration %}selected{% endif %}>
+                            <option value="{{ reg['registration'] }}">
                                 {{ reg['registration'] }}: {{ reg['make'] }} {{ reg['model'] }}
                             </option>
                         {% endfor %}
                     </select>
-                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <a href="{{ url_for('export_log', registration='') }}" id="exportCsv" class="btn btn-success ms-2">Export CSV</a>
                 </div>
             </form>
         </div>
@@ -91,60 +120,9 @@ $(document).ready( function () {
                 </tr>
             </thead>
             <tbody>
-                {% for log in logs %}
-                    <tr>
-                        <td class="text-center">
-                            <a href="{{ url_for('edit_log', log_id=log['id']) }}" data-bs-toggle="tooltip" title="Edit Log Entry">
-                                <img src="{{ url_for('static', filename='edit_icon.png') }}" alt="Edit" width="18">
-                            </a>
-                        </td>
-                        <td>{{ log['date'] }}</td>
-                        <td>{{ log['registration'] }}</td>
-                        <td>{{ log['fuel_code'] }}</td>
-                        <td>{{ log['receipt_number'] }}</td>
-                        <td>{{ log['purchased_at'] }}</td>
-                        <td data-sort="{{ log['litres'] }}">{{ "{:,.2f}".format(log['litres']) }}</td>
-                        <td data-sort="{{ log['price_per_litre'] }}">${{ "{:,.3f}".format(log['price_per_litre']) }}</td>
-                        <td data-sort="{{ log['sale_price'] }}">${{ "{:,.2f}".format(log['sale_price']) }}</td>
-                        <td data-sort="{{ log['kilometres'] }}">{{ "{:,.0f}".format(log['kilometres']) }}</td>
-                        <td data-sort="{{ log['litres_per_100km'] if not log.get('partial_tank') else 9999 }}">
-                            {% if log.get('partial_tank') %}
-                                <span class="badge bg-warning text-dark" title="Partial top-up — excluded from fuel-economy stats">Partial</span>
-                            {% else %}
-                                {{ "{:,.2f}".format(log['litres_per_100km']) }}
-                            {% endif %}
-                        </td>
-                        <td>{{ log['comments'] }}</td>
-                    </tr>
-                {% endfor %}
+                <!-- Rows are populated by the DataTables server-side endpoint (/view_log/data) -->
             </tbody>
         </table>
-    </div>
-    <!-- Add spacing and horizontal line -->
-    <div class="my-4">
-        <hr>
-    </div> <!-- adds vertical margin above and below the line -->
-    <div class="row justify-content-center mt-3">
-        <div class="col-md-8">
-            <form method="GET" action="{{ url_for('view_log') }}" class="mb-3">
-                <div class="input-group">
-                    <label for="registration" class="input-group-text">Filter by Registration:</label>
-                    <select name="registration" id="registration" class="form-select">
-                        <option value="">-- All --</option>
-                        {% for reg in registrations %}
-                        <option value="{{ reg['registration'] }}" {% if reg['registration']==selected_registration %}selected{%
-                            endif %}>
-                            {{ reg['registration'] }}: {{ reg['make'] }} {{ reg['model'] }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-primary">Filter</button>
-                    <a href="{{ url_for('export_log', registration=selected_registration) }}" class="btn btn-success ms-2">
-                        Export CSV
-                    </a>
-                </div>
-            </form>
-        </div>
     </div>
         </div>
     </div>
