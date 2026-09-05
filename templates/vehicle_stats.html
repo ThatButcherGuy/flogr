@@ -51,6 +51,19 @@ Vehicle Statistics - {{ vehicle.registration }}
                 <div class="col-md-4">
                     <button type="submit" class="btn btn-primary w-100">Apply Filter</button>
                 </div>
+
+                <!-- Quick date presets -->
+                <div class="col-12">
+                    <label class="form-label mb-1">Quick periods</label>
+                    <div class="btn-group btn-group-sm w-100 flex-wrap" role="group" aria-label="Quick date range">
+                        {% set periods = [('', 'All'), ('7d', '7 days'), ('30d', '30 days'), ('90d', '90 days'), ('6m', '6 months'), ('12m', '12 months'), ('ytd', 'YTD'), ('fy', 'FY (AU)')] %}
+                        {% for val, lbl in periods %}
+                        <button type="submit" name="period" value="{{ val }}" class="btn {% if active_period == val %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            {{ lbl }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
             </form>
         </div>
     </div>

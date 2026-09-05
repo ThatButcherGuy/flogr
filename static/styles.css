@@ -207,6 +207,18 @@ nav .navbar-brand:hover {
     color: #56607a;
 }
 
+/* Strong, themed stat label — used for the headings inside the
+   "Most Recent Fill" and "Location Insights" cards so each metric's
+   title is easier to read against its value. */
+.stat-label-strong {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fl-blue);
+}
+[data-bs-theme="dark"] .stat-label-strong { color: #9db3ff; }
+
 [data-bs-theme="dark"] .stat-card .stat-value { color: #ffffff; }
 [data-bs-theme="dark"] .stat-card .stat-label { color: #a9b2c7; }
 

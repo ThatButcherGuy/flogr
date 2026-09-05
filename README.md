@@ -116,7 +116,7 @@ Your vehicles (registration, type, make/model, year, odometer). Add, edit or del
 
 ### Stats
 
-A read-only **numbers** overview of your logs, fully driven by the **filter bar** at the top (vehicle, a custom date range, or a **quick period** — All / 7 / 30 / 90 days / 12 months / YTD / Financial year (AU)). A banner shows exactly what's being viewed (e.g. *"vehicle ABC · date: Year to date"*):
+A read-only **numbers** overview of your logs, fully driven by the **filter bar** at the top (vehicle, a custom date range, or a **quick period** — All / 7 / 30 / 90 days / 6 / 12 months / YTD / Financial year (AU)). A banner shows exactly what's being viewed (e.g. *"vehicle ABC · date: Year to date"*):
 
 - **Trend vs Previous Period** — when a date filter is active, compares this period against the equivalent prior window (total spend %, economy L/100km change, distance %, avg days/tank) with green/red change badges.
 - **Summary cards** — total spend, litres, distance, combined L/100km, cost/100km, avg cost/tank, best/worst economy (label-above-value).
@@ -134,7 +134,7 @@ Click a vehicle's registration on the Stats page (or Garage). Shows vehicle deta
 
 ### Reports & Charts
 
-The interactive, graphical analysis hub (also via **"Open Reports & Charts"** on the Stats page). Filter by vehicle, location, a custom date range, or a **quick period** (All / 7 / 30 / 90 days / 12 months / YTD / Financial year (AU)) — charts and summary cards update instantly, client-side:
+The interactive, graphical analysis hub (also via **"Open Reports & Charts"** on the Stats page). Filter by vehicle, location, a custom date range, or a **quick period** (All / 7 / 30 / 90 days / 6 / 12 months / YTD / Financial year (AU)) — charts and summary cards update instantly, client-side:
 
 - Fuel economy (L/100km) and price/L over time (monthly line charts)
 - Litres purchased over time (bar)
