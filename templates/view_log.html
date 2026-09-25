@@ -7,17 +7,17 @@ View Log
 {% block meta %}
 <!-- Data table initilisation completed with assistance from ChatGPT -->
 
-<!-- Include DataTables CSS -->
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.4/css/dataTables.bootstrap4.min.css">
+<!-- Include DataTables CSS (vendored locally for CSP self-only) -->
+<link rel="stylesheet" type="text/css" href="/static/css/dataTables.bootstrap4.min.css">
 {% endblock %}
 
 {% block script %}
-<!-- Include jQuery -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Include jQuery (vendored locally for CSP self-only; external code.jquery.com CDN is blocked by the reverse-proxy CSP) -->
+<script src="/static/js/jquery-3.6.0.min.js"></script>
 
-<!-- Include DataTables JavaScript -->
-<script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.11.4/js/dataTables.bootstrap4.min.js"></script>
+<!-- Include DataTables JavaScript (vendored locally) -->
+<script src="/static/js/jquery.dataTables.min.js"></script>
+<script src="/static/js/dataTables.bootstrap4.min.js"></script>
 
 <script>
 $(document).ready( function () {
